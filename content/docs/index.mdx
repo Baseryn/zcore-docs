@@ -1,13 +1,528 @@
 ---
-title: Hello World
-description: Your first document
+title: ZCore
+description: A pragmatic architectural layer for FastAPI, built for performance, simplicity, and freedom.
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-## What is Next?
+<div className="not-prose mb-16">
+  <img
+    src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/release/v0.1.0-beta.7/docs/assets/banner.png"
+    alt="ZCore"
+    className="w-full rounded-2xl shadow-sm"
+  />
+</div>
+
+<div className="not-prose mb-16 text-center">
+
+<div className="mb-5 text-sm font-medium text-fd-muted-foreground">
+  FASTAPI · PYTHON 3.11+ · APACHE-2.0 · ASYNC-NATIVE
+</div>
+
+<h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
+  Build with FastAPI.
+  <br />
+  <span className="text-fd-primary">Scale with ZCore.</span>
+</h1>
+
+<p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-fd-muted-foreground">
+  A pragmatic architectural layer for FastAPI that gives your application
+  structure when you need it — context-aware data shielding, atomic
+  transactions, scoped dependency injection, and a secure search engine —
+  without taking control away from you.
+</p>
+
+<div className="not-prose mt-8 flex flex-wrap items-center justify-center gap-3">
+  <a
+    href="/docs/getting-started/installation"
+    className="inline-flex items-center rounded-lg bg-fd-primary px-5 py-2.5 text-sm font-medium text-fd-primary-foreground shadow-sm transition hover:opacity-90"
+  >
+    Get Started →
+  </a>
+  <a
+    href="/docs/introduction/why-zcore"
+    className="inline-flex items-center rounded-lg border border-fd-border px-5 py-2.5 text-sm font-medium text-fd-foreground transition hover:bg-fd-accent"
+  >
+    Why ZCore?
+  </a>
+</div>
+
+```bash title="Install"
+pip install fastapi-zcore-framework[all]
+```
+
+</div>
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+
+<Card
+title="Get Started"
+description="Build your first ZCore application and start using the framework in minutes."
+href="/docs/getting-started/installation"
+/>
+
+<Card
+title="Why ZCore?"
+description="Understand the problems ZCore solves and the philosophy behind its architecture."
+href="/docs/introduction/why-zcore"
+/>
+
+<Card
+title="Explore the Guides"
+description="Learn how to use services, repositories, dependency injection, events, plugins, and more."
+href="/docs/guides"
+/>
+
 </Cards>
+
+---
+
+## From Zero to Running API in Two Minutes
+
+ZCore ships a `zc` CLI that scaffolds a production-ready domain module — models, schemas, repositories, services, routers, and plugin — from a single command. Seven secure CRUD + search endpoints are live the moment you run `zc run`.
+
+<Steps>
+
+<Step>
+
+### Install
+
+```bash title="Terminal"
+pip install fastapi-zcore-framework[all]
+```
+
+`[all]` pulls in SQLAlchemy 2.0 (async), aiosqlite, Redis, aiofiles, Argon2 and PyJWT. Smaller installs like `[db]`, `[crypto]`, or `[storage]` are available if you only need parts of the stack.
+
+</Step>
+
+<Step>
+
+### Scaffold a project and a domain
+
+```bash title="Terminal"
+zc init my_app && cd my_app
+zc startapp tasks --template
+```
+
+`zc init` generates `main.py` with a wired `Kernel`, middlewares, exception handlers, and a `.env` with a freshly generated `SECRET_KEY`. `zc startapp --template` produces a complete `tasks/` domain module with boilerplate.
+
+</Step>
+
+<Step>
+
+### Define your model
+
+```python title="app/tasks/models.py"
+from zcore import Base
+from sqlalchemy.orm import Mapped, mapped_column
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    is_completed: Mapped[bool] = mapped_column(default=False)
+```
+
+Every `Base` subclass exposes `.actions()` — the permission keys (`tasks:create`, `tasks:view`, …) that `BaseRouter` wires onto each endpoint automatically.
+
+</Step>
+
+<Step>
+
+### Serve
+
+```bash title="Terminal"
+zc run
+```
+
+Your API is live at `http://127.0.0.1:8000` with seven endpoints ready: `POST /`, `GET /`, `GET /{id}`, `POST /search`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}` — each guarded by scope-based authorization.
+
+</Step>
+
+</Steps>
+
+<Callout type="info" title="Prefer to read first?">
+
+Jump to the [10-Minute Quickstart](/docs/getting-started/quickstart) for a full walkthrough, or read [Why ZCore?](/docs/introduction/why-zcore) to understand the problems it solves.
+
+</Callout>
+
+---
+
+## FastAPI Alone vs. With ZCore
+
+FastAPI gives you a high-performance HTTP engine. It does not give you a blueprint for structuring medium-to-large applications. ZCore fills that gap without hiding FastAPI behind abstractions.
+
+| Concern | Raw FastAPI | With ZCore |
+| --- | --- | --- |
+| **Endpoint scaffolding** | Manually write 7+ files per domain | One `BaseRouter` subclass → 7 secure endpoints |
+| **Data leakage** | Multiple Pydantic models per role; manual `if` conditionals | `Zchema` auto-prunes restricted fields per-user — input, output, and OpenAPI |
+| **Transactions** | Scattered `commit()` / `rollback()` calls | `UnitOfWork` guarantees atomicity + deferred event dispatch |
+| **Dependency wiring** | Deeply nested `Depends()` chains | Constructor injection with `Inject()` — auto-resolved by the IoC container |
+| **Search & pagination** | Hand-written SQL per endpoint | Declarative JSON filters + cursor/offset pagination, column-level security |
+| **Project layout** | No standard; every team reinvents the wheel | `zc init` + `zc startapp` — consistent, isolated domain modules |
+| **Startup orchestration** | Manual `@app.on_event` spaghetti | `Plugin` with a dependency graph → topological sorting |
+
+<Callout type="info" title="ZCore does not replace FastAPI">
+
+Your existing routes, dependencies, middleware, ecosystem, and knowledge remain useful. ZCore is a chassis that stabilizes FastAPI — not a wrapper that hides it.
+
+</Callout>
+
+---
+
+## The Six Core Pillars
+
+### 🔐 Context Shielding — `Zchema`
+
+Write a single schema. Sensitive fields are pruned automatically based on the active user's permission scopes — across input validation, response serialization, and OpenAPI schema generation.
+
+```python title="app/tasks/schemas.py"
+from zcore import Zchema
+
+class TaskCreate(Zchema):
+    __model__ = "tasks"
+    title: str
+    assignee_email: str | None = None  # Auto-hidden from unauthorized users
+```
+
+When a user lacks `tasks:view_sensitive`, `assignee_email` vanishes from validation, serialization, and the generated JSON schema — with no `if` statements in your business code. This prevents both mass assignment and data leakage in one declaration.
+
+→ [Field Masking Guide](/docs/guides/security)
+
+### 🔗 Atomic Transactions — `UnitOfWork`
+
+Group multiple repository operations into a single atomic unit. Domain events are queued and dispatched **only after** a successful commit. If any operation fails, the entire transaction rolls back and queued events are discarded.
+
+```python title="app/orders/services.py"
+from zcore import UnitOfWork
+
+async with UnitOfWork(session, dispatcher) as uow:
+    await order_repo.create(order_data)
+    await inventory_repo.decrement_stock(product_id, quantity)
+    uow.register_event("order.placed", {"id": order_data.id})
+    # commit + dispatch happen automatically on exit
+```
+
+→ [Unit of Work Guide](/docs/guides/unit-of-work)
+
+### ⚡ Scoped Dependency Injection — `Inject()`
+
+Inject services, repositories, and infrastructure via constructor injection. The IoC container resolves them automatically — with three lifetimes: **singleton**, **transient**, and **request-scoped**. Request-scoped instances are cleared after every response, so concurrent requests stay isolated.
+
+```python title="app/tasks/services.py"
+from zcore import BaseService, Inject
+
+class TaskService(BaseService):
+    def __init__(self, repo: TaskRepository = Inject(TaskRepository)):
+        super().__init__(model=Task, repository=repo)
+```
+
+The container auto-wires constructors by reflection, caches signatures for performance, and detects circular dependencies at resolution time.
+
+→ [Dependency Injection Guide](/docs/guides/dependency-injection)
+
+### 🏗️ Modular Plugin System — `Plugin`
+
+Each domain is a self-contained `Plugin` with its own models, services, routers, and lifecycle hooks (`before_startup`, `on_startup`, `after_startup`, `on_shutdown`). The `Kernel` resolves inter-plugin dependencies with topological sorting — guaranteeing correct startup and shutdown order.
+
+```python title="app/tasks/plugin.py"
+from zcore import Plugin
+from .routers import router_instance
+
+class TaskPlugin(Plugin):
+    name = "tasks"
+    dependencies = ["auth"]
+
+    def setup(self, app):
+        app.include_router(router_instance.router)
+
+    async def on_startup(self):
+        await cache.warm()
+```
+
+→ [Plugins Guide](/docs/guides/plugins)
+
+### 🔍 Secure Dynamic Search Engine — `SearchRequest`
+
+A query builder that translates nested JSON filters into safe SQL. Supports dotted relation paths (`owner.email`), recursive `and`/`or` groups, type coercion, cursor and offset pagination, and column-level security — with depth limits to protect against DoS.
+
+```json title="POST /tasks/search"
+{
+  "filters": [
+    { "field": "priority", "op": "eq", "value": "high" },
+    { "field": "is_completed", "op": "eq", "value": false }
+  ],
+  "sort": [{ "field": "created_at", "order": "desc" }],
+  "page": 1,
+  "size": 20
+}
+```
+
+Restricted fields are validated against the active context before the query is built — unauthorized filters, sorts, and relation includes raise `ForbiddenError` before reaching the database.
+
+→ [Search Guide](/docs/guides/search)
+
+### 📦 CLI Scaffolding — `zc`
+
+Stop copying boilerplate. The `zc` CLI generates consistent, production-ready domain modules and manages your dev server.
+
+| Command | Purpose |
+| --- | --- |
+| `zc init <name>` | Create a new project with settings, `.env`, and `main.py` |
+| `zc startapp <name> --template` | Scaffold a domain module with full CRUD boilerplate |
+| `zc run` | Launch Uvicorn with environment-aware config |
+| `zc gensecret` | Generate a cryptographically secure `SECRET_KEY` |
+| `zc genenv` | Emit a `.env.example` from your `Settings` subclass |
+
+→ [CLI Reference](/docs/getting-started/installation)
+
+---
+
+## Architecture Without the Lock-In
+
+ZCore layers cleanly on top of FastAPI. The `Kernel` orchestrates plugins and lifespan. The web layer (`BaseRouter`, `ZCoreAPIRoute`, middlewares) sits above FastAPI's router. The data layer (`BaseRepository`, `UnitOfWork`, `SearchEngine`) and service layer (`BaseService`) stay independent of HTTP. A `ZContext` flows through every layer, carrying the authenticated user and their restricted fields.
+
+```text title="Layered overview"
+        ┌─────────────────────────────────────────────┐
+        │                 Your Application              │
+        └──────────────────────┬──────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    │   FastAPI + ZCore    │
+                    │   Kernel (lifespan)  │
+                    └──────────┬──────────┘
+                               │
+         ┌─────────────────────┼─────────────────────┐
+         │                     │                     │
+    Web Layer             Service Layer          Data Layer
+   BaseRouter             BaseService          BaseRepository
+   ZCoreAPIRoute          Inject()             UnitOfWork
+   Zema (shielding)                            SearchEngine
+   Middlewares                                 Pagination
+         │                     │                     │
+         └─────────────────────┼─────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    │   ZContext (per-request)  │
+                    │   user_id · restricted_fields · action
+                    └─────────────────────┘
+```
+
+You decide which parts belong in your application.
+
+---
+
+## Use One Component or Use Them All
+
+ZCore follows **progressive adoption**. Start with plain FastAPI and introduce ZCore components only when they earn their place.
+
+```python title="Plain FastAPI — nothing forces you to adopt the stack"
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+async def hello():
+    return {"message": "Hello, world!"}
+```
+
+Add a service when application logic needs to be reusable:
+
+```python title="Add a service"
+from zcore import BaseService
+
+class UserService(BaseService):
+    async def create_user(self, data):
+        ...
+```
+
+Add a repository when persistence logic needs a dedicated abstraction:
+
+```python title="Add a repository"
+from zcore import BaseRepository
+
+class UserRepository(BaseRepository[User]):
+    async def find_by_email(self, email: str):
+        ...
+```
+
+Add transactions, events, plugins, or the secure search engine only when they provide value.
+
+<Callout type="success" title="Nothing forces you to adopt the entire stack">
+
+You can use a single ZCore component while keeping the rest of your application as standard FastAPI code.
+
+</Callout>
+
+---
+
+## The Building Blocks
+
+<Cards>
+
+<Card
+title="Dependency Injection"
+description="Singleton, transient, and request-scoped lifetimes with auto-wired constructors."
+href="/docs/guides/dependency-injection"
+/>
+
+<Card
+title="Services"
+description="Keep reusable application logic independent from HTTP concerns, with pre/post hooks."
+href="/docs/guides/services"
+/>
+
+<Card
+title="Repositories"
+description="Structure persistence logic with read/write mixins, eager loading, and scope queries."
+href="/docs/guides/repositories"
+/>
+
+<Card
+title="Unit of Work"
+description="Manage transactional boundaries and coordinate deferred domain events."
+href="/docs/guides/unit-of-work"
+/>
+
+<Card
+title="Events"
+description="Decouple application workflows through async, concurrently-dispatched events."
+href="/docs/guides/events"
+/>
+
+<Card
+title="Plugins"
+description="Compose modular applications through a dependency-aware plugin system."
+href="/docs/guides/plugins"
+/>
+
+<Card
+title="Security"
+description="Argon2id passwords, JWT auth, scope-based permissions, and context-aware field masking."
+href="/docs/guides/security"
+/>
+
+<Card
+title="Search"
+description="Dynamic nested JSON filters, cursor/offset pagination, and column-level security."
+href="/docs/guides/search"
+/>
+
+</Cards>
+
+---
+
+## Defaults, Not Boundaries
+
+ZCore provides reusable base abstractions such as `BaseService`, `BaseRepository`, and `BaseRouter`. They are designed to give you a productive starting point — not to dictate how your application must work.
+
+If the default behavior fits, use it. If it doesn't, extend it.
+
+```python title="Override only what you need"
+from zcore import BaseRepository, RouteKey
+
+class MyRepository(BaseRepository):
+    async def custom_operation(self):
+        ...
+
+class MyRouter(BaseRouter[MyCreate, MyUpdate]):
+    def get_route_dependencies(self, route_key: RouteKey, action: str):
+        # Inject custom auth, logging, or rate-limiting per endpoint
+        return [my_custom_dependency(action)]
+```
+
+You can override the behavior you need while keeping the rest of the framework intact.
+
+<Callout type="info" title="The framework should work for you">
+
+The common path should be easy. The uncommon path should still be possible. ZCore is designed around that principle.
+
+</Callout>
+
+---
+
+## Grow at Your Own Pace
+
+A small application might only need FastAPI:
+
+```text
+FastAPI
+```
+
+As complexity increases:
+
+```text
+FastAPI
+   ├── Services
+   └── Repositories
+```
+
+And when the application benefits from more infrastructure:
+
+```text
+FastAPI
+   ├── Dependency Injection
+   ├── Services
+   ├── Repositories
+   ├── Unit of Work
+   ├── Events
+   └── Plugins
+```
+
+There is no requirement to jump from the first stage to the last. **Add structure when the application needs it.**
+
+---
+
+## Three Principles
+
+<Cards>
+
+<Card
+title="⚡ Performance"
+description="Keep FastAPI's high-performance async foundation. The DI container caches constructor signatures and clears request-scoped instances after every response."
+/>
+
+<Card
+title="🧩 Simplicity"
+description="Sensible defaults and reusable building blocks. Seven secure endpoints from one BaseRouter subclass — no boilerplate."
+/>
+
+<Card
+title="🕊️ Freedom"
+description="Choose what you use, override what you don't like, and keep using FastAPI wherever you want. ZCore never hides FastAPI."
+/>
+
+</Cards>
+
+---
+
+## Start Building
+
+You don't need to understand the entire framework before writing your first application. Start with one problem. Use one component. Add more only when you need them.
+
+<Cards>
+
+<Card
+title="Start with ZCore →"
+description="Install ZCore and build your first application in under two minutes."
+href="/docs/getting-started/installation"
+/>
+
+<Card
+title="Understand the Philosophy →"
+description="Learn why ZCore is designed around performance, simplicity, and freedom."
+href="/docs/introduction/philosophy"
+/>
+
+<Card
+title="Read the API Reference →"
+description="Browse the full public API: Kernel, DI, Security, Zema, and more."
+href="/docs/reference"
+/>
+
+</Cards>
+
+<Callout type="info">
+<strong>Use what helps. Customize what doesn't. Keep control of your application.</strong>
+</Callout>
