@@ -4,6 +4,8 @@ description: A pragmatic architectural layer for FastAPI, built for performance,
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 <div className="not-prose mb-16">
   <img
@@ -77,75 +79,179 @@ href="/docs/guides"
 
 ---
 
-## From Zero to Running API in Two Minutes
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
-ZCore ships a `zc` CLI that scaffolds a production-ready domain module — models, schemas, repositories, services, routers, and plugin — from a single command. Seven secure CRUD + search endpoints are live the moment you run `zc run`.
+<Cards>
 
-<Steps>
+<Card
+  title="ZCore Web (Zchema & BaseRouter)"
+  description="Protects inputs/outputs dynamically via context-aware field masking and auto-scaffolds secure CRUD routes."
+/>
 
-<Step>
+<Card
+  title="ZCore Core Services (BaseService)"
+  description="Encapsulates business logic with powerful pre/post lifecycle hooks and automated transactions."
+/>
 
-### Install
+<Card
+  title="ZCore Data (BaseRepository)"
+  description="Decouples persistence logic using SQLAlchemy 2.0 async with built-in cursor/offset pagination."
+/>
 
-```bash title="Terminal"
-pip install fastapi-zcore-framework[all]
-```
+<Card
+  title="ZCore Context (ZContext)"
+  description="A thread-safe, coroutine-aware request context (ctx) that safely flows across all application layers."
+/>
 
-`[all]` pulls in SQLAlchemy 2.0 (async), aiosqlite, Redis, aiofiles, Argon2 and PyJWT. Smaller installs like `[db]`, `[crypto]`, or `[storage]` are available if you only need parts of the stack.
+</Cards>
 
-</Step>
-
-<Step>
-
-### Scaffold a project and a domain
-
-```bash title="Terminal"
-zc init my_app && cd my_app
-zc startapp tasks --template
-```
-
-`zc init` generates `main.py` with a wired `Kernel`, middlewares, exception handlers, and a `.env` with a freshly generated `SECRET_KEY`. `zc startapp --template` produces a complete `tasks/` domain module with boilerplate.
-
-</Step>
-
-<Step>
-
-### Define your model
-
-```python title="app/tasks/models.py"
-from zcore import Base
-from sqlalchemy.orm import Mapped, mapped_column
-
-class Task(Base):
-    __tablename__ = "tasks"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str]
-    is_completed: Mapped[bool] = mapped_column(default=False)
-```
-
-Every `Base` subclass exposes `.actions()` — the permission keys (`tasks:create`, `tasks:view`, …) that `BaseRouter` wires onto each endpoint automatically.
-
-</Step>
-
-<Step>
-
-### Serve
-
-```bash title="Terminal"
-zc run
-```
-
-Your API is live at `http://127.0.0.1:8000` with seven endpoints ready: `POST /`, `GET /`, `GET /{id}`, `POST /search`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}` — each guarded by scope-based authorization.
-
-</Step>
-
-</Steps>
-
-<Callout type="info" title="Prefer to read first?">
-
-Jump to the [10-Minute Quickstart](/docs/getting-started/quickstart) for a full walkthrough, or read [Why ZCore?](/docs/introduction/why-zcore) to understand the problems it solves.
-
+<Callout type="info" title="Want to learn more?">
+  Read our in-depth [Why ZCore?](/docs/introduction/why-zcore) architecture overview.
 </Callout>
+
+---
+
+## Terminology
+
+* **Zchema:** A subclass of Pydantic's `BaseModel` that automatically prunes restricted fields from input validation, response serialization, and OpenAPI generation based on the active user's permissions.
+* **ZContext (`ctx`):** A lightweight `contextvars` wrapper designed to carry request-scoped state (like the authenticated `user_id` or `restricted_fields`) across async task boundaries.
+* **Progressive Adoption:** The principle that you can use a single ZCore component (like just `Zchema` or just `BaseRepository`) inside a standard FastAPI application without adopting the rest of the stack.
+
+---
+
+## Installation
+
+A minimum version of **Python 3.11** is required.
+
+<Tabs items={['pip', 'poetry', 'pdm']}>
+  <Tab value="pip">
+    ```bash
+    pip install fastapi-zcore-framework
+    ```
+  </Tab>
+  <Tab value="poetry">
+    ```bash
+    poetry add fastapi-zcore-framework
+    ```
+  </Tab>
+  <Tab value="pdm">
+    ```bash
+    pdm add fastapi-zcore-framework
+    ```
+  </Tab>
+</Tabs>
+
+<Callout type="info" title="From Existing Codebase?">
+  ZCore integrates directly with any standard FastAPI app. You don't need to rewrite your routing or change your database models to start using it.
+</Callout>
+
+---
+
+## Enjoy! (Your First 30 Seconds)
+
+Let's build a single-file FastAPI application. We will use `Zchema` to dynamically hide the sensitive `email` field from the API response based on the active request context — with **zero database setup** and **no complex plugin configurations**.
+
+Create a file named `main.py` in your working directory:
+
+```python title="main.py"
+from fastapi import FastAPI
+from zcore import Zchema, ctx
+
+app = FastAPI()
+
+# 1. Define a secure schema mapped to a domain
+class UserResponse(Zchema):
+    __model__ = "users"
+    username: str
+    email: str  # This field is sensitive
+
+@app.get("/me", response_model=UserResponse)
+async def get_me():
+    # 2. Simulate setting restricted fields in context (usually set by your Auth middleware)
+    ctx.restricted_fields = ["users.email"]
+    
+    # 3. Return a standard dictionary. ZCore handles the rest!
+    return {
+        "username": "alice",
+        "email": "alice@example.com"
+    }
+```
+
+### Run the App
+
+Run the application using Uvicorn:
+
+```bash
+uvicorn main:app --reload
+```
+
+Open `http://127.0.0.1:8000/me` in your browser. Because `users.email` was flagged as restricted in the request context, ZCore's `Zchema` automatically intercepted the serialization and pruned it:
+
+```json title="Response"
+{
+  "username": "alice"
+}
+```
+
+<Callout type="success" title="That's Progressive Adoption!">
+  Notice how we didn't use any ZCore routers, plugins, CLI commands, or database layers. We just plugged `Zchema` and `ctx` directly into a standard FastAPI endpoint. You can grow your structure only when your application demands it.
+</Callout>
+
+---
+
+## Learn More
+
+Ready to explore what else ZCore can do for you? Dive into our focused guides:
+
+<Cards>
+
+<Card
+  title="Context Shielding"
+  description="Master dynamic field masking for inputs, outputs, and OpenAPI JSON schemas."
+  href="/docs/guides/security"
+/>
+
+<Card
+  title="Dependency Injection"
+  description="How constructor-based auto-wiring with Inject() isolates request-scoped resources."
+  href="/docs/guides/dependency-injection"
+/>
+
+<Card
+  title="Services & Hooks"
+  description="Decouple your business logic and leverage pre/post execution interceptors."
+  href="/docs/guides/services"
+/>
+
+<Card
+  title="Unit of Work"
+  description="Coordinate atomic database commits and safely queue post-commit domain events."
+  href="/docs/guides/unit-of-work"
+/>
+
+</Cards>
+
+---
+
+## Special Architecture (Optional)
+
+If your application grows and you need to scale to multi-team, multi-domain environments, explore ZCore's enterprise-grade layout tools:
+
+<Cards>
+
+<Card
+  title="Modular Plugins"
+  description="Structure your application into isolated plugins sorted topologically by the Kernel."
+  href="/docs/guides/plugins"
+/>
+
+<Card
+  title="Automated Routing"
+  description="Scaffold 7 secure CRUD + Search endpoints from a single BaseRouter subclass."
+  href="/docs/guides/routing"
+/>
+
+</Cards>
 
 ---
 
@@ -181,7 +287,7 @@ Write a single schema. Sensitive fields are pruned automatically based on the ac
 from zcore import Zchema
 
 class TaskCreate(Zchema):
-    __model__ = "tasks"
+    __model__ = "tasks" # [!code highlight]
     title: str
     assignee_email: str | None = None  # Auto-hidden from unauthorized users
 ```
