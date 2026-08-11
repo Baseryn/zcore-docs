@@ -12,3 +12,11 @@
   --color-fd-primary: hsl(158, 64%, 44%);
   --color-fd-primary-foreground: hsl(0 0% 10%);
 }
+
+/* Fumadocs sidebar */
+
+#nd-sidebar > div {
+  padding-left: 12px;
+  padding-right: 12px;
+  width: 100%;
+}

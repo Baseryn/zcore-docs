@@ -49,9 +49,8 @@ ZCore does not replace FastAPI; it runs alongside it to address common boilerpla
 
 ```python
 # You can mix both paradigms seamlessly in the same file
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from zcore import BaseRepository, get_db
+from fastapi import APIRouter
+from zcore import BaseRepository, Inject, SessionDep
 from .models import Task
 
 class TaskRepo(BaseRepository[Task]):
@@ -60,8 +59,9 @@ class TaskRepo(BaseRepository[Task]):
 router = APIRouter()
 
 # This route remains a standard, native FastAPI controller
+# SessionDep is ZCore's Annotated[AsyncSession, Depends(get_db)]
 @router.get("/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check(db: SessionDep):
     return {"status": "healthy"}
 ```
 
@@ -79,7 +79,7 @@ These frameworks solve fundamentally different architectural problems. Django is
 | **Administration Portal** | Built-in, automated admin panel | None (on the roadmap) |
 | **User Authentication** | Built-in authentication model, session management, and UI | Decoupled `BaseAuth` token decoding and `ZContext` injection |
 | **Database Migrations** | Built-in migration engine | Native integration with Alembic |
-| **API Abstractions** | Class-Based Views (CBVs) and Serializers | standard Pydantic models and functional FastAPI controllers |
+| **API Abstractions** | Class-Based Views (CBVs) and Serializers | Standard Pydantic models and functional FastAPI controllers |
 
 ### When Django is the optimal choice
 
@@ -105,6 +105,7 @@ These frameworks solve fundamentally different architectural problems. Django is
 |---|---|---|
 | **Primary Focus** | Complete out-of-the-box user registration and management | Contextual authentication and scope-based security binding |
 | **Auth Flows** | Registration, verification, password reset, OAuth logins | JWT decoding, Argon2id hashing, and signature validation |
+| **Password Hashing** | Typically Bcrypt | Argon2id (Default, highly secure winner of PHC) |
 | **User Schema & Model** | Enforced user and database schema templates | Bring Your Own User Model (BYOUM) matching `UserProtocol` |
 | **Database Coupling** | Tightly coupled to database adapters (SQLAlchemy/Beanie) | Completely decoupled; relies on standard repository interfaces |
 | **Scope of Utilities** | Authentication only | Full architectural stack (Repository, Service, Zchema, UoW) |
@@ -124,7 +125,7 @@ These frameworks solve fundamentally different architectural problems. Django is
 
 ## ZCore vs. Standalone SQLAlchemy 2.0
 
-ZCore does not replace SQLAlchemy; it builds on top of it. However, it is important to understand the level of abstraction introduced by `BaseRepository`.
+ZCore does not replace SQLAlchemy; it builds on top of it. However, it is important to understand the level of abstraction introduced by `BaseRepository` and `SearchEngine`.
 
 | Query Feature | Standalone SQLAlchemy | ZCore's `BaseRepository` |
 |---|---|---|
@@ -132,6 +133,7 @@ ZCore does not replace SQLAlchemy; it builds on top of it. However, it is import
 | **Database Session** | Managed manually | Injected automatically or scoped via UoW |
 | **Keyset Pagination** | Written manually per query | Built-in via `CursorPagination` and `CursorParams` |
 | **Dynamic Search** | Hand-crafted filter parsing | Automated SQL compilation from `SearchRequest` payloads |
+| **Search Security** | Manual validation required | Built-in depth limits and restricted field checking |
 | **Execution Hooks** | Hand-written or mapped via event listeners | Overridable `pre_create`, `post_delete` service lifecycle hooks |
 
 ### When to use SQLAlchemy directly
@@ -186,7 +188,7 @@ A balanced architecture means acknowledging that every abstraction carries a cos
 | **`Zchema`** | Requires model metadata configuration and scope mappings. | Your API does not serve different user roles or have field-level visibility constraints. |
 | **`UnitOfWork`** | Introduces context manager encapsulation for database sessions. | Your API writes only to single tables within single requests. |
 | **`BaseRouter`** | Generates 7 standard endpoints which must be configured or excluded. | You only need 1 or 2 specific endpoints for a given model. |
-| **`Inject()`** | Requires understanding container lifecycles (Singleton, Scoped, Transient). | Standard FastAPI `Depends()` parameters meet your modular requirements. |
+| **`Inject[T]`** | Requires understanding container lifecycles (Singleton, Scoped, Transient). | Standard FastAPI `Depends()` parameters meet your modular requirements. |
 
 ---
 

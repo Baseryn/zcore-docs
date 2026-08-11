@@ -28,7 +28,7 @@ Misconceptions often arise when comparing modular frameworks to monolithic, opin
 | **An enterprise monolith** | It includes Unit of Work and plugin management. | `UnitOfWork` is a lightweight context manager; `Plugin` is an optional startup registry. Both function seamlessly even in a small, two-file project. |
 | **A replacement for FastAPI** | It exposes its own classes and is imported via `zcore`. | ZCore **extends** FastAPI natively. You continue writing standard `@router` endpoints, using native Pydantic models, and leveraging `Depends()`. ZCore simply offers higher-level architectural abstractions. |
 | **Opinionated or intrusive** | It provides pre-built `Base` classes. | Every method across ZCore base components is fully overridable. "Base" implies a sensible default implementation, not a closed black box. |
-| **All-or-nothing** | It carries the umbrella name of a framework. | You can import and use `Inject()` independently in a project that utilizes zero other ZCore modules. |
+| **All-or-nothing** | It carries the umbrella name of a framework. | You can import and use `Inject[T]` independently in a project that utilizes zero other ZCore modules. |
 
 <Callout type="info" emoji="💡">
   **Architectural Rule:** If a specific ZCore component does not directly solve a structural pain point in your route, model, or service, do not use it. ZCore never imposes self-dependency.
@@ -42,7 +42,7 @@ ZCore does not wrap or abstract away FastAPI; it runs **alongside** it.
 
 *   **Standard Routing:** You retain full access to FastAPI's `APIRouter`, background tasks, and native exception handlers.
 *   **Native Pydantic:** ZCore models (`Zchema`) inherit directly from Pydantic `BaseModel`, ensuring 100% compatibility with native data validation pipelines.
-*   **Dependency Injection Integration:** `Inject()` compiles internally down to standard FastAPI `Depends()` structures, keeping introspection, documentation, and testing fully intact.
+*   **Dependency Injection Integration:** `Inject[T]` compiles internally down to standard FastAPI `Annotated[T, Depends()]` structures, keeping introspection, documentation, and testing fully intact.
 
 ---
 
@@ -56,7 +56,7 @@ There is no global initialization hook or mandatory app factory that hijacks you
 from zcore import Inject
 
 class NotificationService:
-    def __init__(self, client = Inject(EmailClient)):
+    def __init__(self, client: EmailClient = Inject[EmailClient]):
         self.client = client
 ```
 
@@ -64,19 +64,19 @@ class NotificationService:
 Base classes are structured to be extended or replaced. If a default implementation does not match your business rules, override it cleanly:
 
 ```python
-from zcore import BaseRepository
+from typing import Any
+from zcore import BaseService
+from pydantic import BaseModel
 
-class TaskRepo(BaseRepository[Task]):
-    # Override a specific lifecycle hook
-    async def before_create(self, data: dict) -> dict:
-        data["slug"] = slugify(data["title"])
-        return data
+class TaskService(BaseService[Task]):
+    # Override a specific lifecycle hook (Hooks live in the Service layer)
+    async def pre_create(self, schema: TaskCreate) -> dict[str, Any] | None:
+        return {"slug": slugify(schema.title)}
 
     # Or override the entire core method when absolute control is needed
     async def create(self, schema: BaseModel, **extra_data: Any) -> Task:
-        task = Task(**schema.model_dump(), **extra_data)
-        self.db.add(task)
-        await self.db.flush()
+        task = await self.repository.create(schema, **extra_data)
+        await external_cache.set(f"task:{task.id}", task)
         return task
 ```
 
@@ -93,7 +93,7 @@ class TaskRepo(BaseRepository[Task]):
     pass
 
 @router.get("/tasks")
-async def list_tasks(repo: TaskRepo = Inject(TaskRepo)):
+async def list_tasks(repo: TaskRepo = Inject[TaskRepo]):
     return await repo.get_list()
 ```
 *No service layer, no base router—just clean repository abstraction.*
@@ -106,7 +106,7 @@ async def list_tasks(repo: TaskRepo = Inject(TaskRepo)):
 from zcore import BaseService, Inject
 
 class TaskService(BaseService[Task]):
-    def __init__(self, repo: TaskRepo = Inject(TaskRepo)):
+    def __init__(self, repo: TaskRepo = Inject[TaskRepo]):
         super().__init__(model=Task, repository=repo)
 
     async def pre_create(self, schema):
@@ -141,7 +141,7 @@ async def get_task(id: int, db: AsyncSession = Depends(get_db)):
 from zcore import Inject
 
 class AuditLogger:
-    def __init__(self, writer = Inject(LogWriter)):
+    def __init__(self, writer: LogWriter = Inject[LogWriter]):
         self.writer = writer
 ```
 *Pure dependency injection without any database or web abstractions.*
@@ -189,7 +189,7 @@ Clarity regarding framework boundaries helps determine when ZCore is an appropri
 You control the pace of adoption. Moving rightward along the spectrum is entirely optional and driven solely by project growth:
 
 1. **Plain FastAPI** (Zero ZCore dependencies)
-2. **Targeted Utilities** (Adopting `Inject()` or `UnitOfWork`)
+2. **Targeted Utilities** (Adopting `Inject[T]` or `UnitOfWork`)
 3. **Data Access Layer** (`BaseRepository` and `BaseService`)
 4. **Security & Projection** (`Zchema` for role-based filtering)
 5. **Full Orchestration** (`BaseRouter` and modular `Plugin` architectures)

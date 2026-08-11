@@ -2,6 +2,10 @@
   "pages": [
     "quick-start",
     "what-is-zcore",
-    "comparisons"
+    "comparisons",
+    "quick-learn",
+    "how-to",
+    "core-concepts",
+    "api-reference"
   ]
 }
