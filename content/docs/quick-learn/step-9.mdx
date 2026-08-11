@@ -1,0 +1,79 @@
+---
+title: Step 9 - Security & Context (Auth & Scopes)
+description: Implement JWT authentication and bind user scopes to the ZContext for dynamic field pruning.
+icon: Lock
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+To make our `Zchema` field-pruning work, we need to authenticate the user, extract their permissions (scopes), and load them into the `ZContext`.
+
+<Steps>
+  <Step>
+    ### Define the User Protocol
+
+    ZCore does not enforce a user model. You just need a class that matches the `UserProtocol` (has `id`, `is_active`, `is_superuser`). Let's define a simple mock user and an auth dependency.
+
+    Create `auth.py` in your root directory:
+
+    ```python
+    # auth.py
+    import uuid
+    from zcore import BaseAuth, ctx
+    from pydantic import BaseModel
+
+    class AppUser(BaseModel):
+        id: uuid.UUID
+        is_active: bool = True
+        is_superuser: bool = False
+        scopes: list[str] = []
+        # Binds securely to ZCore's context manager
+        all_restricted_fields: list[str] = []
+
+    class AppAuth(BaseAuth[AppUser]):
+        async def fetch_user(self, identity: str) -> AppUser | None:
+            # In a real app, fetch from DB. Here, we mock a user.
+            return AppUser(
+                id=uuid.UUID(identity),
+                scopes=["tasks:view"],
+                # This user CANNOT view the assignee_email
+                all_restricted_fields=["tasks.view.assignee_email"] 
+            )
+    ```
+  </Step>
+
+  <Step>
+    ### Override the Auth Stub
+
+    In `main.py`, bind this auth class to ZCore's dependency override system:
+
+    ```python
+    # main.py
+    from zcore.security import get_current_user_stub
+    from auth import AppAuth, AppUser
+
+    app.dependency_overrides[get_current_user_stub] = AppAuth(user_schema=AppUser)
+    ```
+
+    <Callout type="warn" emoji="🔑">
+      **Authentication Requirement:**
+      Because `BaseAuth` validates the incoming Bearer token automatically, any incoming request must provide a valid JWT token signed by `Security.create_jwt()` containing the user's ID as the `sub` claim and `type="access"`.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### How Context Shielding Activates
+
+    <Callout type="info" emoji="🔗">
+      **The Flow:**
+      1. A request hits a `BaseRouter` endpoint.
+      2. `HasScopes` dependency checks if the user has `tasks:view`.
+      3. `BaseAuth.__call__` decodes the JWT, fetches the user, and automatically maps `all_restricted_fields` to `ctx.restricted_fields` as an immutable `frozenset`.
+      4. The endpoint returns a `TaskResponse` object.
+      5. `Zchema` intercepts serialization, sees the restriction, and **removes** `assignee_email` from the JSON response automatically.
+    </Callout>
+  </Step>
+</Steps>
+
+Our API is now secure. The final step is to write a test to prove everything works.
