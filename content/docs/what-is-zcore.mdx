@@ -1,0 +1,220 @@
+---
+title: What is ZCore?
+description: A modular architectural framework designed for FastAPI. Use an isolated component or adopt the full stack — your code stays standard FastAPI.
+icon: CircleQuestionMark
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeCard, Cards } from 'fumadocs-ui/components/card';
+
+## Core Definition
+
+**ZCore is a modular architectural framework built on top of FastAPI.**
+
+It provides a cohesive set of enterprise-grade design patterns—such as dependency injection, repository abstraction, dynamic schema projections, and transactional unit of work—designed to eliminate repetitive boilerplate in growing FastAPI applications. 
+
+Every architectural layer in ZCore is **strictly opt-in**. You can adopt a single pattern in an existing codebase, combine multiple layers, or ignore them entirely. Your application remains a standard FastAPI project at its core.
+
+---
+
+## What ZCore is NOT
+
+Misconceptions often arise when comparing modular frameworks to monolithic, opinionated tools. Here is how ZCore differs:
+
+| ZCore is NOT | Why this misconception occurs | The Architectural Reality |
+|---|---|---|
+| **A rigid framework (like Django)** | It features CLI scaffolding and architectural base classes. | The CLI generates clean, standard files that you can freely modify or delete. Base classes provide flexible working defaults, not enforced monolithic structures. |
+| **An enterprise monolith** | It includes Unit of Work and plugin management. | `UnitOfWork` is a lightweight context manager; `Plugin` is an optional startup registry. Both function seamlessly even in a small, two-file project. |
+| **A replacement for FastAPI** | It exposes its own classes and is imported via `zcore`. | ZCore **extends** FastAPI natively. You continue writing standard `@router` endpoints, using native Pydantic models, and leveraging `Depends()`. ZCore simply offers higher-level architectural abstractions. |
+| **Opinionated or intrusive** | It provides pre-built `Base` classes. | Every method across ZCore base components is fully overridable. "Base" implies a sensible default implementation, not a closed black box. |
+| **All-or-nothing** | It carries the umbrella name of a framework. | You can import and use `Inject()` independently in a project that utilizes zero other ZCore modules. |
+
+<Callout type="info" emoji="💡">
+  **Architectural Rule:** If a specific ZCore component does not directly solve a structural pain point in your route, model, or service, do not use it. ZCore never imposes self-dependency.
+</Callout>
+
+---
+
+## How ZCore Relates to FastAPI
+
+ZCore does not wrap or abstract away FastAPI; it runs **alongside** it. 
+
+*   **Standard Routing:** You retain full access to FastAPI's `APIRouter`, background tasks, and native exception handlers.
+*   **Native Pydantic:** ZCore models (`Zchema`) inherit directly from Pydantic `BaseModel`, ensuring 100% compatibility with native data validation pipelines.
+*   **Dependency Injection Integration:** `Inject()` compiles internally down to standard FastAPI `Depends()` structures, keeping introspection, documentation, and testing fully intact.
+
+---
+
+## Core Design Principles
+
+### 1. Optional by Default
+There is no global initialization hook or mandatory app factory that hijacks your project structure. You import and instantiate precisely what you require:
+
+```python
+# Import and use only the DI container helper — nothing else
+from zcore import Inject
+
+class NotificationService:
+    def __init__(self, client = Inject(EmailClient)):
+        self.client = client
+```
+
+### 2. Overridable by Design
+Base classes are structured to be extended or replaced. If a default implementation does not match your business rules, override it cleanly:
+
+```python
+from zcore import BaseRepository
+
+class TaskRepo(BaseRepository[Task]):
+    # Override a specific lifecycle hook
+    async def before_create(self, data: dict) -> dict:
+        data["slug"] = slugify(data["title"])
+        return data
+
+    # Or override the entire core method when absolute control is needed
+    async def create(self, schema: BaseModel, **extra_data: Any) -> Task:
+        task = Task(**schema.model_dump(), **extra_data)
+        self.db.add(task)
+        await self.db.flush()
+        return task
+```
+
+### 3. Composable, Not Coupled
+You can mix and match ZCore components with native FastAPI patterns freely:
+
+<Tabs items={['Repository Only', 'Service + Repository', 'Zchema with Plain Router', 'Standalone Inject']}>
+<Tab value="Repository Only">
+
+```python
+from zcore import BaseRepository, Inject
+
+class TaskRepo(BaseRepository[Task]):
+    pass
+
+@router.get("/tasks")
+async def list_tasks(repo: TaskRepo = Inject(TaskRepo)):
+    return await repo.get_list()
+```
+*No service layer, no base router—just clean repository abstraction.*
+
+</Tab>
+
+<Tab value="Service + Repository">
+
+```python
+from zcore import BaseService, Inject
+
+class TaskService(BaseService[Task]):
+    def __init__(self, repo: TaskRepo = Inject(TaskRepo)):
+        super().__init__(model=Task, repository=repo)
+
+    async def pre_create(self, schema):
+        return {"slug": slugify(schema.title)}
+```
+*Encapsulated business logic without enforcing automated routing.*
+
+</Tab>
+
+<Tab value="Zchema with Plain Router">
+
+```python
+from zcore import Zchema
+from fastapi import APIRouter, Depends
+
+class TaskResponse(Zchema):
+    __model__ = "tasks"
+    title: str
+    internal_score: float  # Automatically stripped if unauthorized
+
+@router.get("/tasks/{id}", response_model=TaskResponse)
+async def get_task(id: int, db: AsyncSession = Depends(get_db)):
+    ...
+```
+*Role-aware schema projection working inside a standard native route.*
+
+</Tab>
+
+<Tab value="Standalone Inject">
+
+```python
+from zcore import Inject
+
+class AuditLogger:
+    def __init__(self, writer = Inject(LogWriter)):
+        self.writer = writer
+```
+*Pure dependency injection without any database or web abstractions.*
+
+</Tab>
+</Tabs>
+
+---
+
+## Boundaries: What ZCore Does NOT Do
+
+Clarity regarding framework boundaries helps determine when ZCore is an appropriate fit:
+
+| ZCore does NOT | Underlying Implementation / Alternative |
+|---|---|
+| Replace SQLAlchemy | ZCore builds directly on top of SQLAlchemy 2.0 async engines and sessions. |
+| Replace Pydantic | ZCore extends Pydantic V2 via `Zchema` for field-level security projection. |
+| Enforce strict project layouts | The CLI provides a recommended modular structure; you can adapt or delete it. |
+| Manage database migrations | Use Alembic directly for full control over migration histories. |
+| Provide built-in user authentication UI | It offers `BaseAuth` utilities, but authentication state and models are yours to define. |
+
+---
+
+## When to Adopt ZCore (And When to Skip It)
+
+### ZCore helps when...
+*   You are writing repetitive CRUD endpoints and data-access queries across multiple models.
+*   You need dynamic, role-based field visibility on schemas without maintaining dozens of duplicate Pydantic models.
+*   You require atomic multi-table writes with deferred event publishing.
+*   You prefer clean constructor injection over verbose, nested `Depends()` parameters.
+
+### ZCore is unnecessary when...
+*   Your application consists of 1–2 simple endpoints with minimal business logic.
+*   You have no requirements for field-level security masking or complex audit trails.
+*   You prefer writing explicit, manual `Depends()` chains and native SQL statements.
+
+<Callout type="info" emoji="🎯">
+  **Pragmatic Rule:** If your FastAPI application is scaling cleanly and meeting your architectural needs without friction, you do not need ZCore. Adopt ZCore only when addressing specific structural scaling bottlenecks.
+</Callout>
+
+---
+
+## The Adoption Spectrum
+
+You control the pace of adoption. Moving rightward along the spectrum is entirely optional and driven solely by project growth:
+
+1. **Plain FastAPI** (Zero ZCore dependencies)
+2. **Targeted Utilities** (Adopting `Inject()` or `UnitOfWork`)
+3. **Data Access Layer** (`BaseRepository` and `BaseService`)
+4. **Security & Projection** (`Zchema` for role-based filtering)
+5. **Full Orchestration** (`BaseRouter` and modular `Plugin` architectures)
+
+---
+
+## Explore the Components
+
+<Cards>
+  <Card title="Inject & Container" href="/docs/di">
+    Explore automatic type-safe constructor wiring.
+  </Card>
+  <Card title="BaseRepository" href="/docs/repository">
+    Async CRUD, keyset pagination, and secure search engines.
+  </Card>
+  <Card title="BaseService" href="/docs/service">
+    Isolate business logic with pre/post execution hooks.
+  </Card>
+  <Card title="Zchema" href="/docs/zchema">
+    Dynamic field-level security pruning for responses.
+  </Card>
+  <Card title="UnitOfWork" href="/docs/uow">
+    Atomic transactions and deferred event dispatching.
+  </Card>
+  <Card title="BaseRouter" href="/docs/router">
+    Rapid endpoint scaffolding with full override capabilities.
+  </Card>
+</Cards>

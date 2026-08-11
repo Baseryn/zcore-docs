@@ -25,8 +25,53 @@ const SparkleIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v1m0 16v1m-8-9H3m18 0h1m-2.636-6.364l-.707-.707M6.343 17.657l-.707-.707m0-12.728l.707-.707m12.728 12.728l.707-.707"/><circle cx="12" cy="12" r="4"/></svg>
 );
 
+// New Icons for Core Pillars
+const ShieldIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+);
 
-// ─── 3x3 Dynamic Grid Tool Data (Perfect Line Breaks to Prevent Horizontal Scrollbar) ───────────
+const LayersIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+);
+
+const BoltIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+);
+
+const BlocksIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="14" y="3" rx="1"/><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"/></svg>
+);
+
+
+// ─── Core Pillars Data ────────────────────────────────────────────
+const pillars = [
+  {
+    icon: <ShieldIcon />,
+    title: 'Context Shielding (Zchema)',
+    description: 'Write one schema. Sensitive fields are pruned dynamically per-user in real-time.',
+    color: 'text-emerald-500'
+  },
+  {
+    icon: <LayersIcon />,
+    title: 'Atomic Transactions',
+    description: 'Group multiple operations into all-or-nothing transactions with deferred event dispatch.',
+    color: 'text-amber-500'
+  },
+  {
+    icon: <BoltIcon />,
+    title: 'Scoped DI',
+    description: 'Singleton, transient, and request-scoped dependencies resolved automatically.',
+    color: 'text-sky-500'
+  },
+  {
+    icon: <BlocksIcon />,
+    title: 'Modular Plugins',
+    description: 'Organize domains into isolated plugins with topological startup ordering.',
+    color: 'text-rose-500'
+  }
+];
+
+// ─── 3x3 Dynamic Grid Tool Data ───────────────────────────────────
 const tools = [
   // --- Category: Independent (Green) ---
   {
@@ -35,9 +80,7 @@ const tools = [
     name: 'Inject[T]',
     oneLine: 'Type-safe constructor dependency injection mapped directly to FastAPI Depends.',
     code: `class TaskService:
-    def __init__(self,
-        r: Repo = Inject[Repo]
-    ):
+    def __init__(self, r: Repo = Inject[Repo]):
         self.r = r`,
     without: 'FastAPI Depends(get_task_repo) chains',
   },
@@ -72,11 +115,9 @@ async def handle(payload):
 )`,
     without: 'Insecure custom file streaming',
   },
-
-  // --- Category: Composable (Yellow) ---
   {
-    category: 'composable',
-    badge: '🟡 Composable',
+    category: 'independent',
+    badge: '🟢 Independent',
     name: 'BaseRepository',
     oneLine: 'Complete asynchronous CRUD, Keyset Pagination, and dynamic search out of the box.',
     code: `class TaskRepo(BaseRepository[Task]):
@@ -84,6 +125,16 @@ async def handle(payload):
         super().__init__(Task, db)`,
     without: 'Manual session.execute() queries',
   },
+  {
+    category: 'independent',
+    badge: '🟢 Independent',
+    name: 'Pagination',
+    oneLine: 'High-performance Cursor (Keyset) and Offset pagination with zero boilerplate.',
+    code: `paginator = CursorPagination(cursor_field="id")
+result = await repo.get_list(pagination=paginator)`,
+    without: 'Manual offset/limit calculations',
+  },
+  // --- Category: Composable (Yellow) ---
   {
     category: 'composable',
     badge: '🟡 Composable',
@@ -128,8 +179,20 @@ query = engine.build_query(req)`,
     service = TaskService`,
     without: '7 redundant endpoint functions',
   },
+  {
+    category: 'orchestrated',
+    badge: '🔴 Orchestrated',
+    name: 'Plugin System',
+    oneLine: 'Organize domains into isolated plugins with topological startup/shutdown ordering.',
+    code: `class TaskPlugin(Plugin):
+    name = "tasks"
+    dependencies = ["auth"]
+    
+    async def on_startup(self):
+        await cache.warm()`,
+    without: 'Manual app.on_event spaghetti',
+  },
 ];
-
 
 // ─── Adoption Steps ────────────────────────────────────────────────
 const adoptionSteps = [
@@ -184,13 +247,11 @@ export default function HomePage() {
 
       <div className="relative max-w-6xl mx-auto px-6 py-20 z-10">
 
-
         {/* ═══════════════════════════════════════════════════════════ */}
         {/*  SECTION 1: HERO                                          */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <header className="flex flex-col items-center text-center max-w-3xl mx-auto mb-24">
 
-          {/* Core Wide Framework Logo Banner (Image 1) */}
           <div className="mb-10 w-full max-w-md md:max-w-lg select-none pointer-events-none filter drop-shadow-lg transition-transform duration-300 hover:scale-[1.01]">
             <img 
               src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/release/v0.1.0-beta.7/docs/assets/banner.png"
@@ -199,13 +260,11 @@ export default function HomePage() {
             />
           </div>
 
-          {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 dark:border-emerald-500/10 rounded-full mb-8 backdrop-blur-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
             <span>Python 3.11+ · Apache-2.0 · Fully Async</span>
           </div>
 
-          {/* Headline */}
           <h1 className="text-3xl sm:text-5xl font-bold tracking-tight leading-[1.1] mb-6">
             Build with FastAPI.
             <br />
@@ -214,16 +273,14 @@ export default function HomePage() {
             </span>
           </h1>
 
-          {/* Subheadline */}
           <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-10 max-w-2xl">
             A pragmatically engineered architectural framework built on top of FastAPI.
             Absolute freedom. No rigid constraints. Use only what you need, and override everything else.
           </p>
 
-          {/* CTA Buttons */}
           <div className="flex flex-wrap justify-center gap-4">
             <Link
-              href="/docs"
+              href="/docs/quick-start"
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-zinc-950 transition px-6 py-3 text-sm font-semibold shadow-lg shadow-emerald-500/10"
             >
               Quick Start <ChevronRight />
@@ -239,9 +296,23 @@ export default function HomePage() {
           </div>
         </header>
 
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/*  SECTION 1.5: CORE PILLARS (New Section)                  */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <section className="mb-28">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {pillars.map((p, i) => (
+              <div key={i} className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 bg-white/70 dark:bg-zinc-950/30 backdrop-blur-sm flex flex-col gap-3">
+                <div className={`${p.color}`}>{p.icon}</div>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{p.title}</h3>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{p.description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 2: 30-SECOND DEMO — Simplest Possible Example     */}
+        {/*  SECTION 2: 30-SECOND DEMO                                */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-10">
@@ -257,7 +328,6 @@ export default function HomePage() {
           </div>
 
           <div className="border border-zinc-200 dark:border-zinc-800/80 rounded-2xl bg-zinc-950 overflow-hidden shadow-2xl max-w-3xl mx-auto">
-            {/* Window bar */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-900 bg-zinc-950/80">
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-[#ff5f56]" />
@@ -268,7 +338,6 @@ export default function HomePage() {
               <div className="w-12" />
             </div>
 
-            {/* Code */}
             <div className="p-6 font-mono text-sm leading-relaxed text-zinc-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="text-zinc-600 mb-3"># Step 1: Your standard SQLAlchemy model</div>
               <div><span className="text-emerald-400">class</span> <span className="text-emerald-300">Task</span>(Base):</div>
@@ -285,14 +354,12 @@ export default function HomePage() {
               <div className="pl-8">super().__init__(model=Task, db=db)</div>
             </div>
 
-            {/* Result bar */}
             <div className="px-6 py-4 border-t border-zinc-900 bg-emerald-500/5 flex items-center gap-3">
               <CheckIcon />
               <span className="text-xs text-emerald-400 font-semibold">Async methods, pagination, and policy-guarded search — out of the box.</span>
             </div>
           </div>
 
-          {/* "Or don't" callout */}
           <div className="max-w-3xl mx-auto mt-6 flex items-start gap-3 px-5 py-4 rounded-xl border border-zinc-200 bg-zinc-100 dark:border-zinc-800/60 dark:bg-zinc-900/30">
             <MinusIcon />
             <div>
@@ -304,7 +371,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 3: PICK WHAT YOU NEED — Tool Cards (3x3 Grid)      */}
+        {/*  SECTION 3: PICK WHAT YOU NEED — Tool Cards (3x3 Grid)    */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
@@ -316,14 +383,12 @@ export default function HomePage() {
             </p>
           </div>
 
-          {/* Legend */}
           <div className="flex flex-wrap justify-center gap-4 mb-10 text-xs text-zinc-600 dark:text-zinc-500">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Independent — works completely alone</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Composable — pairs with DB/Model logic</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500" /> Orchestrated — unified framework infrastructure</span>
           </div>
 
-          {/* Upgraded 3x3 Grid with custom scrollbars & glossy borders */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {tools.map((tool) => (
               <div
@@ -337,7 +402,6 @@ export default function HomePage() {
                 }`}
               >
                 <div>
-                  {/* Badge + Name */}
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-base font-bold text-zinc-900 dark:text-zinc-100 font-mono tracking-tight">{tool.name}</span>
                     <span className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border ${
@@ -348,18 +412,13 @@ export default function HomePage() {
                         : 'text-rose-600 bg-rose-500/5 border-rose-500/10 dark:text-rose-400'
                     }`}>{tool.badge}</span>
                   </div>
-
-                  {/* One-line description */}
                   <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-4">{tool.oneLine}</p>
                 </div>
 
                 <div>
-                  {/* Code snippet with hidden custom scrollbars to prevent horizontal scrollbars on small grids */}
                   <div className="bg-zinc-950 dark:bg-zinc-900/60 rounded-xl px-4 py-3 border border-zinc-900 font-mono text-[11px] leading-relaxed text-zinc-300 mb-4 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                     <pre className="whitespace-pre">{tool.code}</pre>
                   </div>
-
-                  {/* "Without ZCore" alternative */}
                   <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500 font-sans border-t border-zinc-200 dark:border-zinc-900 pt-3">
                     <MinusIcon />
                     <span>Without: <span className="text-zinc-700 dark:text-zinc-400">{tool.without}</span></span>
@@ -369,7 +428,6 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Everything is overridable */}
           <div className="max-w-3xl mx-auto mt-10 p-6 rounded-2xl border border-emerald-500/10 bg-emerald-500/5">
             <div className="flex items-start gap-3">
               <div className="text-emerald-600 dark:text-emerald-400 mt-0.5"><SparkleIcon /></div>
@@ -385,7 +443,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 4: GRADUAL ADOPTION — Step by Step                */}
+        {/*  SECTION 4: GRADUAL ADOPTION                              */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
@@ -398,7 +456,6 @@ export default function HomePage() {
           <div className="space-y-6 max-w-3xl mx-auto">
             {adoptionSteps.map((item) => (
               <div key={item.step} className="border border-zinc-200 dark:border-zinc-800/80 rounded-2xl bg-white/70 dark:bg-zinc-950/30 backdrop-blur-sm overflow-hidden">
-                {/* Step header */}
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-200 dark:border-zinc-900">
                   <span className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-sm font-bold">
                     {item.step}
@@ -406,19 +463,16 @@ export default function HomePage() {
                   <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{item.title}</span>
                 </div>
 
-                {/* Code (Remains dark-theme only for code-editor aesthetic) */}
                 <div className="p-6 font-mono text-sm leading-relaxed overflow-x-auto bg-zinc-950 text-zinc-300 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   <pre className="whitespace-pre">{item.code}</pre>
                 </div>
 
-                {/* Note */}
                 <div className="px-6 py-3 border-t border-zinc-200 dark:border-zinc-900 bg-zinc-100/50 dark:bg-zinc-900/20 text-xs text-zinc-500 flex items-center gap-2">
                   <CheckIcon /> {item.note}
                 </div>
               </div>
             ))}
 
-            {/* Step 3: Callout */}
             <div className="flex items-start gap-3 px-6 py-5 rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-100/50 dark:bg-zinc-900/20">
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-sm font-bold shrink-0">3</span>
               <div>
@@ -433,7 +487,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 5: DECISION TABLE — "Do I need this?"             */}
+        {/*  SECTION 5: DECISION TABLE                                */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
@@ -488,11 +542,20 @@ export default function HomePage() {
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">EventDispatcher</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Manual listener triggers</td>
                 </tr>
+                <tr className="bg-zinc-50/40 dark:bg-zinc-950/20">
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Handle large datasets with high-performance cursor paging</td>
+                  <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">Pagination</td>
+                  <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Manual offset/limit math</td>
+                </tr>
+                <tr className="bg-white/40 dark:bg-zinc-950/30">
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Structure domain modules with topological startup order</td>
+                  <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">Plugin System</td>
+                  <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Spaghetti app.on_event</td>
+                </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Emphasis callout */}
           <div className="max-w-3xl mx-auto mt-6 text-center">
             <p className="text-xs text-zinc-400 dark:text-zinc-600">
               <span className="text-zinc-600 dark:text-zinc-400 font-medium">Core Architecture Note:</span> Every alternative in the right-hand column is completely valid, production-ready FastAPI code. ZCore simply streamlines the process, giving you the exact same outcomes with less code.
@@ -502,7 +565,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 6: CLI — Quick Start                              */}
+        {/*  SECTION 6: CLI QUICK START                               */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
           <div>
@@ -523,7 +586,6 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Terminal */}
           <div className="border border-zinc-800/80 rounded-xl bg-zinc-950 p-5 font-mono text-xs leading-normal relative text-zinc-100 shadow-2xl">
             <div className="absolute top-4 right-4 text-zinc-600">
               <TerminalIcon />
@@ -544,11 +606,10 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 7: DYNAMIC SCHEMA GENERATION — ?schema=true       */}
+        {/*  SECTION 7: DYNAMIC SCHEMA GENERATION                     */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center max-w-5xl mx-auto">
-            {/* Terminal Mockup on Left */}
             <div className="border border-zinc-800/80 rounded-xl bg-zinc-950 p-5 font-mono text-xs leading-normal relative text-zinc-100 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="absolute top-4 right-4 text-zinc-600">
                 <TerminalIcon />
@@ -569,7 +630,6 @@ export default function HomePage() {
               <div className="text-emerald-400">{`}`}</div>
             </div>
 
-            {/* Explanation on Right */}
             <div>
               <h2 className="text-3xl font-bold tracking-tight mb-4">
                 Real-Time UI Generation
@@ -590,7 +650,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 8: THE ROADMAP — ZCore Admin (Coming Soon)        */}
+        {/*  SECTION 8: THE ROADMAP — ZCore Admin                     */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="max-w-4xl mx-auto rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.02] dark:border-emerald-500/10 dark:bg-emerald-500/[0.01] p-8 md:p-10 backdrop-blur-sm relative overflow-hidden">
@@ -598,22 +658,18 @@ export default function HomePage() {
             
             <div className="flex flex-col md:flex-row gap-8 items-start md:items-center justify-between">
               <div className="max-w-xl">
-                {/* Badge */}
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 rounded-full mb-4 font-mono">
                   ✨ COMING SOON / ROADMAP
                 </div>
                 
-                {/* Title */}
                 <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-4">
                   The Dynamic Admin Panel
                 </h2>
                 
-                {/* Paragraph */}
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
                   We are conceptualizing a highly modular, lightning-fast administrative dashboard for FastAPI, natively powered by the ZCore core architecture.
                 </p>
 
-                {/* Sub-features list */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-zinc-700 dark:text-zinc-400">
                   <div className="flex items-center gap-2">
                     <CheckIcon /> <span>Reporting via <code className="font-mono text-zinc-800 dark:text-zinc-300">SearchEngine</code></span>
@@ -630,7 +686,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Callout box on right */}
               <div className="border border-emerald-500/10 dark:border-zinc-800 bg-white/50 dark:bg-zinc-950 p-6 rounded-2xl w-full md:w-64 shrink-0 text-center shadow-sm">
                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-3 text-emerald-600 dark:text-emerald-400">
                   <SparkleIcon />
@@ -648,7 +703,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 9: OVERRIDABILITY — The Freedom Promise           */}
+        {/*  SECTION 9: OVERRIDABILITY                               */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
@@ -661,7 +716,6 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
-            {/* Repository */}
             <div className="p-6 rounded-2xl border border-zinc-200 bg-white/70 dark:border-zinc-800/80 dark:bg-zinc-950/30 backdrop-blur-sm shadow-sm">
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseRepository</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300 font-mono">
@@ -673,7 +727,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Service */}
             <div className="p-6 rounded-2xl border border-zinc-200 bg-white/70 dark:border-zinc-800/80 dark:bg-zinc-950/30 backdrop-blur-sm shadow-sm">
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseService</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300 font-mono">
@@ -685,7 +738,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Router */}
             <div className="p-6 rounded-2xl border border-zinc-200 bg-white/70 dark:border-zinc-800/80 dark:bg-zinc-950/30 backdrop-blur-sm shadow-sm">
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseRouter</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -701,7 +753,7 @@ export default function HomePage() {
 
 
         {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 10: CTA FOOTER                                    */}
+        {/*  SECTION 10: CTA FOOTER                                   */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <section className="border-t border-zinc-200 dark:border-zinc-900 pt-16 text-center">
           <h2 className="text-2xl font-bold mb-4">
