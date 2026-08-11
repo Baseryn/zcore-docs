@@ -1,0 +1,69 @@
+---
+title: Step 5 - Schemas & Dynamic Security (Zchema)
+description: Define Pydantic schemas and use Zchema to automatically mask sensitive fields based on user context.
+icon: ShieldCheck
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Instead of writing multiple Pydantic models for different user roles (e.g., `TaskPublic`, `TaskAdmin`), ZCore provides a single, role-aware `Zchema`.
+
+<Steps>
+  <Step>
+    ### Define Schemas
+
+    Open `tasks/schemas.py` and define your creation, update, and response schemas:
+
+    ```python
+    # tasks/schemas.py
+    import uuid
+    from zcore import Zchema
+    from pydantic import ConfigDict
+
+    class TaskCreate(Zchema):
+        __model__ = "tasks"  # Binds this schema to the Task domain
+        
+        title: str
+        is_completed: bool = False
+        assignee_email: str | None = None
+
+    class TaskUpdate(Zchema):
+        __model__ = "tasks"
+        
+        title: str | None = None
+        is_completed: bool | None = None
+        assignee_email: str | None = None
+
+    class TaskResponse(Zchema):
+        __model__ = "tasks"
+        
+        id: uuid.UUID
+        title: str
+        is_completed: bool
+        assignee_email: str | None = None
+        
+        model_config = ConfigDict(from_attributes=True)
+    ```
+
+    <Callout type="info" emoji="💡">
+      **Pro Tip: Single Schema Approach**
+      
+      Thanks to `Zchema`'s bidirectional security (handling both inputs and outputs on the fly), you are **not** forced to maintain three separate models. Since it automatically sanitizes incoming fields (preventing Mass Assignment) and filters outgoing payloads dynamically, you can define **one single Pydantic schema** (e.g., `TaskSchema`) and reuse it across creation, updates, and responses!
+    </Callout>
+  </Step>
+
+  <Step>
+    ### How Zchema Works
+
+    <Callout type="info" emoji="🛡️">
+      **Context Shielding:** By setting `__model__ = "tasks"`, `Zchema` is now aware of its domain.
+      
+      During the request lifecycle, if the active user lacks certain permissions, their restricted fields are loaded into `ctx.restricted_fields` (e.g., `"tasks.view.assignee_email"`).
+      
+      When `TaskResponse` serializes the data, `Zchema` intercepts the process and **automatically prunes** the `assignee_email` from the JSON output. No `if` statements required.
+    </Callout>
+  </Step>
+</Steps>
+
+We now have secure data transfer objects. Let's build the data access layer.
