@@ -1,0 +1,163 @@
+---
+title: Utilities & Helpers
+description: API reference for JSON serialization, Draft-7 schema validation, text slugification, and database event bridges.
+icon: Wrench
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore includes a collection of utility functions and serialization helpers designed to handle advanced Python data types, Draft-7 JSON Schema validation, URL-safe slug generation, and database-to-application event bridging.
+
+## 1. JSON Serialization & Parsing
+
+Standard Python `json` fails when serializing `UUID`, `datetime`, `date`, `time`, or `Decimal` objects. ZCore provides custom encoders and wrapper functions:
+
+```python
+from zcore.utils.helpers import json_dumps, json_loads, CustomJSONEncoder
+```
+
+### `json_dumps`
+
+Serializes a Python object or Pydantic data structure into a JSON string using `CustomJSONEncoder`.
+
+```python
+def json_dumps(obj: Any, **kwargs: Any) -> str: ...
+```
+
+<TypeTable
+  type={{
+    obj: {
+      type: 'Any',
+      description: 'The target Python object or collection to serialize (coerces UUID, Decimal, Date, DateTime automatically).',
+    },
+    '**kwargs': {
+      type: 'Any',
+      description: 'Additional keyword arguments forwarded directly to json.dumps.',
+    },
+    returns: {
+      type: 'str',
+      description: 'The serialized JSON string payload.',
+    }
+  }}
+/>
+
+### `json_loads`
+
+Deserializes a JSON string or binary byte stream back into Python structures.
+
+```python
+def json_loads(s: str | bytes, **kwargs: Any) -> Any: ...
+```
+
+---
+
+## 2. JSON Schema Validation (`validate_json_schema`)
+
+Validates arbitrary dictionary payloads or schema structures using the **Draft-7 JSON Schema** specification.
+
+```python
+from zcore.utils.schema import validate_json_schema
+
+# Validate payload against a schema
+validate_json_schema(data={"name": "Task 1"}, schema=my_draft7_schema)
+
+# Or assert that a schema definition itself is structurally valid
+validate_json_schema(data=my_draft7_schema)
+```
+
+<TypeTable
+  type={{
+    data: {
+      type: 'Any',
+      description: 'The target data dictionary to validate, or a schema dictionary to check if schema is None.',
+    },
+    schema: {
+      type: 'Optional[dict[str, Any]]',
+      default: 'None',
+      description: 'The Draft-7 JSON Schema dictionary to evaluate the data against.',
+    },
+    returns: {
+      type: 'None',
+      description: 'Raises ValidationError if data violates constraints or if the schema definition is corrupted.',
+    }
+  }}
+/>
+
+---
+
+## 3. Text & Type Utilities
+
+### `slugify`
+
+Transforms an input text string into a sanitized, URL-safe, hyphenated slug.
+
+```python
+from zcore.utils.helpers import slugify
+
+slug = slugify("Hello World & Welcome!") # -> "hello-world-welcome"
+```
+
+<TypeTable
+  type={{
+    text: {
+      type: 'str',
+      description: 'The raw text string to slugify (strips whitespace, normalizes casing, and removes non-alphanumeric chars).',
+    },
+    returns: {
+      type: 'str',
+      description: 'The URL-safe, lowercase slug string.',
+    }
+  }}
+/>
+
+### `SafeUrl`
+
+Pydantic `Annotated` type wrapper for `HttpUrl` that automatically serializes URL instances cleanly to plain strings during model dumps.
+
+```python
+from zcore.utils.helpers import SafeUrl
+from pydantic import BaseModel
+
+class WebhookConfig(BaseModel):
+    target_url: SafeUrl  # Serializes directly to str in JSON exports
+```
+
+---
+
+## 4. Database Event Bridge (`zcore.db.events`)
+
+Provides a decoupled, non-blocking bridge between low-level database operations and the application's central `EventDispatcher`.
+
+```python
+from zcore.db.events import register_db_event_dispatcher, dispatch_db_event
+```
+
+### `register_db_event_dispatcher`
+
+Configures the central event dispatcher used by database modules to notify downstream systems of lifecycle transitions. Invoked during `main.py` bootstrap.
+
+```python
+register_db_event_dispatcher(kernel.dispatcher)
+```
+
+<TypeTable
+  type={{
+    dispatcher: {
+      type: 'EventDispatcher',
+      description: 'The core application EventDispatcher instance.',
+    }
+  }}
+/>
+
+### `dispatch_db_event`
+
+Safely dispatches database lifecycle events asynchronously within the active event loop, catching and logging handler errors to protect calling database engines.
+
+```python
+await dispatch_db_event("db.record_created", {"table": "tasks", "id": str(task_id)})
+```
+
+<Callout type="info" emoji="⚡">
+  **Non-Blocking & Fault-Tolerant:** `dispatch_db_event` executes in the background of the active event loop. If a listener handler fails, the error is logged to `structlog` without breaking synchronous database transactions.
+</Callout>

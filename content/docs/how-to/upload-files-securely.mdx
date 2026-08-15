@@ -61,7 +61,7 @@ File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends 
     @router.post("/avatar")
     async def upload_avatar(
         file: UploadFile = File(...),
-        storage: Inject[StorageProvider] = None
+        storage: Inject[StorageProvider]
     ):
         # Saves to ./storage/uploads/avatars/ with collision-resistant UUID filename
         saved_path = await storage.upload(file, related_type="avatars")
@@ -76,7 +76,7 @@ File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends 
 
     ```python
     @router.delete("/avatar")
-    async def delete_avatar(file_path: str, storage: Inject[StorageProvider] = None):
+    async def delete_avatar(file_path: str, storage: Inject[StorageProvider]):
         success = await storage.delete(file_path)
         return {"deleted": success}
     ```

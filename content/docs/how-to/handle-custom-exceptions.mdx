@@ -1,0 +1,107 @@
+---
+title: How to handle and raise domain exceptions
+description: Raise built-in domain exceptions, create custom business errors, and return standardized JSON error envelopes.
+icon: TriangleAlert
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore eliminates inconsistent error payloads across endpoints. Raising any `AppException` subclass automatically formats the response into a unified `ResponseWrapper` envelope with the correct HTTP status code.
+
+<Steps>
+  <Step>
+    ### 1. Raising Built-In Exceptions in Services
+
+    Raise typed exceptions directly inside your services, repositories, or hooks:
+
+    ```python
+    # tasks/services.py
+    from zcore import BaseService
+    from zcore.exceptions import EntityNotFound, ValidationError
+    from .models import Task
+    from .repositories import TaskRepo
+    from .schemas import TaskCreate
+
+    class TaskService(BaseService[Task]):
+        def __init__(self, repo: TaskRepo):
+            super().__init__(model=Task, repository=repo)
+
+        async def mark_task_as_done(self, task_id: uuid.UUID):
+            task = await self.repository.get(id=task_id)
+            if not task:
+                # Raises 404 with structured payload context
+                raise EntityNotFound(
+                    message=f"Task with ID {task_id} does not exist.",
+                    payload={"task_id": str(task_id)}
+                )
+
+            if task.is_completed:
+                # Raises 400 Bad Request
+                raise ValidationError(
+                    message="Task is already marked as completed."
+                )
+
+            return await self.repository.update(task_id, {"is_completed": True})
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Creating Custom Business Exceptions
+
+    To define domain-specific exceptions, subclass `AppException` and specify your desired `status_code`:
+
+    ```python
+    # tasks/exceptions.py
+    from zcore.exceptions import AppException
+
+    class TaskLimitExceeded(AppException):
+        status_code = 422  # Unprocessable Entity
+        
+        def __init__(self, current_count: int, max_limit: int):
+            super().__init__(
+                message=f"Account task limit reached ({current_count}/{max_limit}).",
+                payload={"current_count": current_count, "max_limit": max_limit}
+            )
+
+    class PaymentRequired(AppException):
+        status_code = 402  # Payment Required
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Ensure Handler Registration in `main.py`
+
+    Verify that `app_exception_handler` is registered on your root FastAPI app:
+
+    ```python
+    # main.py
+    from fastapi import FastAPI
+    from zcore.exceptions import AppException, app_exception_handler
+
+    app = FastAPI(...)
+
+    # Intercepts AppException and all its subclasses automatically
+    app.add_exception_handler(AppException, app_exception_handler)
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="📦">
+  **Uniform Response Structure:**
+  Any raised exception output is automatically serialized through ZCore's custom JSON encoder into:
+  ```json
+  {
+    "success": false,
+    "message": "Account task limit reached (100/100).",
+    "data": null,
+    "meta": {
+      "error_type": "TaskLimitExceeded",
+      "payload": {
+        "current_count": 100,
+        "max_limit": 100
+      }
+    }
+  }
+  ```
+</Callout>

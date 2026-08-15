@@ -1,0 +1,140 @@
+---
+title: Exceptions & Centralized Error Handling
+description: API reference for ZCore's domain exception hierarchy, HTTP status code mappings, and standardized JSON error envelopes.
+icon: TriangleAlert
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore provides a unified exception hierarchy mapped directly to standard HTTP status codes. When raised anywhere in your services, repositories, or schemas, these exceptions are intercepted by `app_exception_handler` and converted into consistent, structured JSON responses wrapped in `ResponseWrapper`.
+
+## Base Class: `AppException`
+
+The root runtime exception for all business and domain errors in ZCore.
+
+```python
+from zcore.exceptions import AppException
+
+class AppException(Exception):
+    status_code: int = 500
+
+    def __init__(self, message: str, payload: Optional[dict] = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.payload = payload
+```
+
+<TypeTable
+  type={{
+    message: {
+      type: 'str',
+      description: 'A human-readable diagnostic error message.',
+    },
+    payload: {
+      type: 'Optional[dict]',
+      default: 'None',
+      description: 'Optional structured metadata dictionary providing additional context (e.g., invalid fields, entity IDs).',
+    },
+    status_code: {
+      type: 'int',
+      default: '500',
+      description: 'The HTTP status code associated with this error response.',
+    }
+  }}
+/>
+
+---
+
+## Built-In Domain Exceptions
+
+ZCore provides pre-configured domain exceptions mapped to standard HTTP status codes:
+
+```python
+from zcore.exceptions import (
+    EntityNotFound,
+    DuplicateEntity,
+    ValidationError,
+    AuthError,
+    ForbiddenError
+)
+```
+
+<TypeTable
+  type={{
+    EntityNotFound: {
+      type: 'status_code = 404 (Not Found)',
+      description: 'Raised when a requested database record or entity identifier is missing.',
+    },
+    DuplicateEntity: {
+      type: 'status_code = 409 (Conflict)',
+      description: 'Raised when a unique constraint or deduplication validation fails.',
+    },
+    ValidationError: {
+      type: 'status_code = 400 (Bad Request)',
+      description: 'Raised when dynamic search queries, storage validators, or business rules are violated.',
+    },
+    AuthError: {
+      type: 'status_code = 401 (Unauthorized)',
+      description: 'Raised when JWT tokens are invalid, expired, or authentication is required.',
+    },
+    ForbiddenError: {
+      type: 'status_code = 403 (Forbidden)',
+      description: 'Raised when an authenticated user lacks required scopes or attempts to access restricted paths.',
+    }
+  }}
+/>
+
+---
+
+## Global Exception Handler: `app_exception_handler`
+
+Asynchronous handler configured on the root FastAPI application instance. It intercepts any `AppException`, logs structured diagnostics via `structlog`, and returns a `ZCoreJSONResponse`.
+
+```python
+from zcore.exceptions import AppException, app_exception_handler
+
+app.add_exception_handler(AppException, app_exception_handler)
+```
+
+<TypeTable
+  type={{
+    request: {
+      type: 'Request',
+      description: 'The active incoming FastAPI HTTP Request.',
+    },
+    exc: {
+      type: 'AppException',
+      description: 'The captured application exception instance.',
+    },
+    returns: {
+      type: 'JSONResponse',
+      description: 'A formatted ZCoreJSONResponse with status_code=exc.status_code.',
+    }
+  }}
+/>
+
+---
+
+## Standardized JSON Error Response
+
+Every intercepted exception is rendered in the unified `ResponseWrapper` envelope:
+
+```json
+{
+  "success": false,
+  "message": "Task not found.",
+  "data": null,
+  "meta": {
+    "error_type": "EntityNotFound",
+    "payload": {
+      "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    }
+  }
+}
+```
+
+<Callout type="info" emoji="🪵">
+  **Structured Diagnostic Logging:**
+  Whenever an `AppException` is caught, `app_exception_handler` automatically logs a structured warning containing the exception type, message, payload, HTTP method, URL path, and request correlation ID (`request_id`).
+</Callout>

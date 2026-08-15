@@ -8,8 +8,10 @@
     "api-router",
     "zchema",
     "response-wrapper",
+    "exceptions",
     "ioc-container",
     "inject",
+    "events",
     "security",
     "base-auth",
     "base-cache",
@@ -20,6 +22,7 @@
     "settings",
     "kernel",
     "plugin",
+    "utilities",
     "ztest-client",
     "testing-fixtures"
   ]

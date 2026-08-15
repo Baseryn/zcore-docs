@@ -6,7 +6,7 @@ icon: Terminal
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
-import { File, Files } from 'fumadocs-ui/components/files';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
 
 In this first step, we will set up the foundation of our project. ZCore is designed to be zero-config out of the box, but for a production-ready start, we need to ensure our environment variables and secret keys are generated securely.
 
@@ -43,10 +43,11 @@ In this first step, we will set up the foundation of our project. ZCore is desig
 
     This generates a minimal FastAPI entry point and a `.env` file.
     <Files>
-      <File name="task_manager" />
-      <File name=".env" />
-      <File name="main.py" />
-      <File name="requirements.txt" />
+      <Folder name="task_manager" defaultOpen>
+        <File name=".env" />
+        <File name="main.py" />
+        <File name="requirements.txt" />
+      </Folder>
     </Files>
   </Step>
 

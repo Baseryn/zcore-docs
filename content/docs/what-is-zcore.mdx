@@ -93,7 +93,7 @@ class TaskRepo(BaseRepository[Task]):
     pass
 
 @router.get("/tasks")
-async def list_tasks(repo: TaskRepo = Inject[TaskRepo]):
+async def list_tasks(repo: Inject[TaskRepo]):
     return await repo.get_list()
 ```
 *No service layer, no base router—just clean repository abstraction.*
@@ -106,7 +106,7 @@ async def list_tasks(repo: TaskRepo = Inject[TaskRepo]):
 from zcore import BaseService, Inject
 
 class TaskService(BaseService[Task]):
-    def __init__(self, repo: TaskRepo = Inject[TaskRepo]):
+    def __init__(self, repo: TaskRepo):
         super().__init__(model=Task, repository=repo)
 
     async def pre_create(self, schema):
@@ -141,7 +141,7 @@ async def get_task(id: int, db: AsyncSession = Depends(get_db)):
 from zcore import Inject
 
 class AuditLogger:
-    def __init__(self, writer: LogWriter = Inject[LogWriter]):
+    def __init__(self, writer: Inject[LogWriter]):
         self.writer = writer
 ```
 *Pure dependency injection without any database or web abstractions.*

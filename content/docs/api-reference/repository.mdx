@@ -1,12 +1,13 @@
 ---
 title: BaseRepository
-description: Comprehensive API reference for the BaseRepository class and its Mixins.
+description: Comprehensive API reference for the BaseRepository class, query scoping, and its Mixins.
 icon: Database
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRepository` provides standard asynchronous database access, combining Read, Write, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions.
+`BaseRepository` provides standard asynchronous database access, combining Read, Write, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions and enforces context security through model-level query scoping.
 
 ## Class Definition
 
@@ -52,6 +53,34 @@ class BaseRepository(
     }
   }}
 />
+
+---
+
+## Query Scoping & Multi-Tenancy (`_get_base_query`)
+
+`BaseRepository` constructs its initial `SELECT` statements via `_get_base_query()`. 
+
+If your SQLAlchemy model declares a classmethod named **`scope_query`**, `_get_base_query()` passes the query statement through this hook before applying any route-level filters:
+
+```python
+# Internal mechanics in BaseRepository
+def _get_base_query(self) -> Select:
+    query = select(self.model)
+    scoper = getattr(self.model, "scope_query", None)
+    if scoper:
+        return scoper(query)
+    return query
+```
+
+<Callout type="info" emoji="💡">
+  **Model Hook Signature:**
+  ```python
+  @classmethod
+  def scope_query(cls, query: Select) -> Select:
+      # Apply global row-level security or tenant isolation
+      return query.where(cls.tenant_id == ctx.get("tenant_id"))
+  ```
+</Callout>
 
 ---
 

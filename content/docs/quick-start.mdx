@@ -84,7 +84,7 @@ import uuid
 from zcore import Base
 from sqlalchemy.orm import Mapped, mapped_column
 
-class Task(Base):
+class Tasks(Base):
     __tablename__ = "tasks"
     
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -100,17 +100,17 @@ import uuid
 from zcore import Zchema
 from pydantic import ConfigDict
 
-class TaskCreate(Zchema):
+class TasksCreate(Zchema):
     __model__ = "tasks"
     title: str
     is_completed: bool = False
 
-class TaskUpdate(Zchema):
+class TasksUpdate(Zchema):
     __model__ = "tasks"
     title: str | None = None
     is_completed: bool | None = None
 
-class TaskResponse(Zchema):
+class TasksResponse(Zchema):
     __model__ = "tasks"
     id: uuid.UUID
     title: str
@@ -143,7 +143,7 @@ from zcore.db import db_manager, register_db_event_dispatcher
 from zcore.logging import setup_logging
 
 # Import your domain plugin
-from tasks.plugin import TaskPlugin # <--- ADD THIS
+from tasks.plugin import TasksPlugin # <--- ADD THIS
 
 setup_logging()
 db_manager.init_app(
@@ -157,7 +157,7 @@ kernel = Kernel()
 register_db_event_dispatcher(kernel.dispatcher)
 
 # Register the plugin
-kernel.add_plugin(TaskPlugin()) # <--- ADD THIS
+kernel.add_plugin(TasksPlugin()) # <--- ADD THIS
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -213,13 +213,13 @@ Open `tasks/routers.py` and define your router configuration:
 # tasks/routers.py
 from zcore import BaseRouter
 from .models import Task
-from .schemas import TaskCreate, TaskUpdate, TaskResponse
+from .schemas import TasksCreate, TasksUpdate, TasksResponse
 from .services import TaskService
 
-class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+class TasksRouter(BaseRouter[TasksCreate, TasksUpdate]):
     model = Task
     create_schema = TaskCreate
-    update_schema = TaskUpdate
+    update_schema = TasksUpdate
     schema_out = TaskResponse
     service = TaskService
     prefix = "/tasks" # Optional: defaults to model __tablename__
@@ -232,7 +232,7 @@ Now, open `tasks/plugin.py`. The CLI generated a basic plugin file. Ensure it in
 # tasks/plugin.py
 from zcore import Plugin
 from fastapi import FastAPI
-from .routers import TaskRouter
+from .routers import TasksRouter
 
 class TaskPlugin(Plugin):
     name = "tasks"
@@ -240,7 +240,7 @@ class TaskPlugin(Plugin):
     dependencies = []
 
     def setup(self, app: FastAPI) -> None:
-        router_instance = TaskRouter()
+        router_instance = TasksRouter()
         app.include_router(router_instance.router)
 
     async def on_startup(self):
@@ -273,11 +273,11 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
-from tasks.models import Task
+from tasks.models import Tasks
 
 @router.get("/tasks/{id}")
 async def get_task(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Task).where(Task.id == id))
+    result = await db.execute(select(Tasks).where(Tasks.id == id))
     task = result.scalars().first()
     return task
 ```
@@ -288,11 +288,11 @@ async def get_task(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 # tasks/repositories.py
 from sqlalchemy.ext.asyncio import AsyncSession
 from zcore import BaseRepository
-from .models import Task
+from .models import Tasks
 
-class TaskRepo(BaseRepository[Task]):
+class TasksRepo(BaseRepository[Tasks]):
     def __init__(self, db: AsyncSession):
-        super().__init__(model=Task, db=db)
+        super().__init__(model=Tasks, db=db)
 ```
 
 By simply defining this class, you gain access to 5 standard async CRUD operations, structured search filters, and cursor-based pagination.
@@ -315,16 +315,16 @@ By simply defining this class, you gain access to 5 standard async CRUD operatio
 # tasks/services.py
 from typing import Any
 from zcore import BaseService, Inject
-from .models import Task
-from .repositories import TaskRepo
-from .schemas import TaskCreate
+from .models import Tasks
+from .repositories import TasksRepo
+from .schemas import TasksCreate
 
-class TaskService(BaseService[Task]):
+class TaskService(BaseService[Tasks]):
     # The repository is automatically resolved and injected by ZCore's DI container
-    def __init__(self, repo: TaskRepo = Inject[TaskRepo]):
-        super().__init__(model=Task, repository=repo)
+    def __init__(self, repo: TasksRepo):
+        super().__init__(model=Tasks, repository=repo)
 
-    async def pre_create(self, schema: TaskCreate) -> dict[str, Any] | None:
+    async def pre_create(self, schema: TasksCreate) -> dict[str, Any] | None:
         # Perform validation or auto-generate fields before saving
         return {"slug": "slugified-title"}
 ```
@@ -350,10 +350,10 @@ Available lifecycle hooks include `pre_create`, `post_create`, `pre_update`, `po
 ```python
 from pydantic import BaseModel
 
-class TaskPublic(BaseModel):
+class TasksPublic(BaseModel):
     title: str
 
-class TaskInternal(BaseModel):
+class TasksInternal(BaseModel):
     title: str
     assignee_email: str  # Sensitive field
 ```
@@ -365,7 +365,7 @@ class TaskInternal(BaseModel):
 import uuid
 from zcore import Zchema
 
-class TaskResponse(Zchema):
+class TasksResponse(Zchema):
     __model__ = "tasks"
     
     id: uuid.UUID
