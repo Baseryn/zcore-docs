@@ -8,6 +8,7 @@
     "implement-cursor-pagination",
     "build-complex-search",
     "use-pre-post-hooks",
-    "use-unit-of-work"
+    "use-unit-of-work",
+    "mask-sensitive-fields"
   ]
 }
