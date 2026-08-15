@@ -4,6 +4,7 @@
     "use-cli-commands",
     "wire-dependencies",
     "register-singleton-vs-scoped",
-    "override-repository"
+    "override-repository",
+    "implement-cursor-pagination"
   ]
 }

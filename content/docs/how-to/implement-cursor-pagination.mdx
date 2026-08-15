@@ -1,0 +1,85 @@
+---
+title: How to implement Cursor Pagination
+description: High-performance keyset pagination for large datasets and real-time feeds without offset drift.
+icon: ListOrdered
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+For high-throughput datasets or infinite-scroll feeds, offset pagination causes query slowdowns and duplicate items (offset drift). ZCore provides `CursorPagination` based on encoded keysets.
+
+<Steps>
+  <Step>
+    ### 1. Enable Cursor Pagination on the Router
+
+    Open your router file and set `pagination_class = CursorPagination`. This automatically changes the `GET /` endpoint query signature to accept `cursor` and `size`:
+
+    ```python
+    # routers.py
+    from zcore import BaseRouter
+    from zcore.db.pagination import CursorPagination
+    from .models import Task
+    from .schemas import TaskCreate, TaskUpdate, TaskResponse
+    from .services import TaskService
+
+    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+        model = Task
+        create_schema = TaskCreate
+        update_schema = TaskUpdate
+        schema_out = TaskResponse
+        service = TaskService
+        
+        # Switch from default Page-Number to Keyset Cursor pagination
+        pagination_class = CursorPagination
+        prefix = "/tasks"
+        tags = ["Tasks"]
+
+    router_instance = TaskRouter()
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Client Requests
+
+    The client can fetch the first page by simply requesting the desired size, then passing the returned `cursor` for subsequent pages:
+
+    ```bash
+    # Initial request (First page)
+    curl -X GET "http://localhost:8000/tasks/?size=20"
+
+    # Subsequent request using the received next_cursor
+    curl -X GET "http://localhost:8000/tasks/?size=20&cursor=eyJ2YWx1ZSI6ICI...=="
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Response Structure
+
+    The response is wrapped in ZCore's `ResponseWrapper`. The `meta` block contains the pagination state:
+
+    ```json
+    {
+      "success": true,
+      "message": "Success",
+      "data": [
+        {
+          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "title": "Complete documentation",
+          "is_completed": false
+        }
+      ],
+      "meta": {
+        "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTA4LTE1VDA4OjAwOjAwIiwgImlkIjogImExYjJjM2Q0Li4uIn0",
+        "has_more": true,
+        "size": 20
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="⚡">
+  **Under the Hood (Keyset Sorting):**
+  ZCore encodes cursor positions into URL-safe Base64 tokens containing both the coordinate value and the record's primary key (`id`). This allows the database to execute fast `WHERE col < val` indexed lookups rather than scanning thousands of rows via `OFFSET`.
+</Callout>
