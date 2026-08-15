@@ -13,6 +13,7 @@
     "expose-dynamic-schemas",
     "enforce-permission-scopes",
     "upload-files-securely",
-    "cache-database-queries"
+    "cache-database-queries",
+    "test-endpoints"
   ]
 }
