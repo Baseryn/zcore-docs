@@ -1,0 +1,68 @@
+---
+title: How to override BaseRepository methods
+description: Add custom persistence logic, override CRUD operations, or execute raw SQLAlchemy queries in the repository layer.
+icon: Code
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`BaseRepository` provides built-in CRUD operations out of the box. You can override any default method or add completely custom database queries.
+
+<Steps>
+  <Step>
+    ### 1. Overriding a Built-In CRUD Method
+
+    To customize how entities are persisted or apply low-level database transformations, override the method and invoke `super()`:
+
+    ```python
+    # repositories.py
+    import uuid
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from zcore import BaseRepository
+    from .models import Task
+    from .schemas import TaskCreate
+
+    class TaskRepo(BaseRepository[Task]):
+        def __init__(self, db: AsyncSession):
+            super().__init__(model=Task, db=db)
+
+        async def create(self, schema: TaskCreate, **extra_data) -> Task:
+            # Low-level persistence logic (e.g., injecting DB-level generated attributes)
+            extra_data["internal_reference"] = f"REF-{uuid.uuid4().hex[:8].upper()}"
+                
+            # Execute standard parent insert and flush logic
+            return await super().create(schema, **extra_data)
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Adding Custom Queries with `self.db`
+
+    You have direct, unrestricted access to `self.db` (the active `AsyncSession`). You can write standard SQLAlchemy 2.0 select statements, joins, aggregations, or raw SQL:
+
+    ```python
+    from sqlalchemy import select, func
+
+    class TaskRepo(BaseRepository[Task]):
+        def __init__(self, db: AsyncSession):
+            super().__init__(model=Task, db=db)
+
+        async def get_completed_tasks_count(self) -> int:
+            """Custom query counting all completed tasks."""
+            query = select(func.count(self.pk)).where(self.model.is_completed.is_(True))
+            result = await self.db.execute(query)
+            return result.scalar_one()
+    ```
+  </Step>
+</Steps>
+
+<Callout type="warn" emoji="📐">
+  **Clean Architecture Note:**
+  Keep **business validation** (e.g., checking input rules or user permissions) inside your `BaseService` (using hooks like `pre_create`). The repository layer should strictly focus on **data access and database persistence**.
+</Callout>
+
+<Callout type="info" emoji="💡">
+  **Why `AsyncSession` instead of `SessionDep`?**
+  Use `AsyncSession` type hints in your repositories. ZCore's IoC container auto-wires the request-scoped session directly. `SessionDep` is intended strictly for FastAPI route handler endpoints.
+</Callout>
