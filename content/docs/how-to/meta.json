@@ -6,6 +6,7 @@
     "register-singleton-vs-scoped",
     "override-repository",
     "implement-cursor-pagination",
-    "build-complex-search"
+    "build-complex-search",
+    "use-pre-post-hooks"
   ]
 }
