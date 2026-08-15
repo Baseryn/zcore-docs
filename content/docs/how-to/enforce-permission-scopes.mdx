@@ -1,0 +1,104 @@
+---
+title: How to enforce Permission Scopes
+description: Secure endpoints using automated model action scopes, custom route dependencies, and HasScopes.
+icon: Lock
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore eliminates authorization boilerplate by automatically generating and enforcing scope permissions per database model.
+
+### Automated Model Actions
+
+When a model inherits from ZCore's `Base`, it automatically exposes the `.actions()` descriptor mapped to its `__tablename__`:
+
+| Model Action | Generated Scope Key | Mapped Route Key |
+|---|---|---|
+| `Task.actions().CREATE` | `"tasks:create"` | `POST /` |
+| `Task.actions().VIEW` | `"tasks:view"` | `GET /{id}` |
+| `Task.actions().LISTVIEW` | `"tasks:listview"` | `GET /` & `POST /search` |
+| `Task.actions().UPDATE` | `"tasks:update"` | `PUT /{id}` & `PATCH /{id}` |
+| `Task.actions().DELETE` | `"tasks:delete"` | `DELETE /{id}` |
+
+<Steps>
+  <Step>
+    ### 1. Automatic Scoping in `BaseRouter` (Zero-Config)
+
+    By simply declaring `model = Task` on your `BaseRouter`, all 7 CRUD endpoints are **automatically protected** with their corresponding `HasScopes(...)` rules:
+
+    ```python
+    # routers.py
+    from zcore import BaseRouter
+    from .models import Task
+    from .schemas import TaskCreate, TaskUpdate, TaskResponse
+    from .services import TaskService
+
+    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+        model = Task
+        create_schema = TaskCreate
+        update_schema = TaskUpdate
+        schema_out = TaskResponse
+        service = TaskService
+        prefix = "/tasks"
+
+    # POST /tasks automatically requires "tasks:create"
+    # GET /tasks/{id} automatically requires "tasks:view"
+    # DELETE /tasks/{id} automatically requires "tasks:delete"
+    router_instance = TaskRouter()
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Customizing Route Dependencies
+
+    To override or inject custom permissions for specific operations, override `get_route_dependencies`:
+
+    ```python
+    from typing import Any
+    from zcore import BaseRouter, RouteKey, HasScopes
+
+    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+        # ... standard configurations ...
+
+        def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
+            # Enforce an extra high-privilege scope strictly for deletion
+            if route_key == RouteKey.DELETE:
+                return [HasScopes("admin:all", "tasks:delete")]
+                
+            # Fallback to default automated model actions for other routes
+            return super().get_route_dependencies(route_key, action)
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Using `HasScopes` in Custom Routes
+
+    For standalone or non-CRUD FastAPI endpoints, use `HasScopes` directly as a dependency:
+
+    ```python
+    from fastapi import APIRouter, Depends
+    from zcore.security import HasScopes
+
+    custom_router = APIRouter()
+
+    @custom_router.get(
+        "/tasks/analytics/summary",
+        dependencies=[Depends(HasScopes("tasks:analytics", "reports:view"))]
+    )
+    async def get_analytics_summary():
+        return {"metrics": "active"}
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="👑">
+  **Superuser Bypass:**
+  By default, `HasScopes(*required_scopes, allow_superuser=True)` automatically allows users with `is_superuser = True` to bypass scope checks.
+</Callout>
+
+<Callout type="warn" emoji="🚫">
+  **Security Responses:**
+  * If the user is unauthenticated or marked `is_active = False` $\rightarrow$ **`401 Unauthorized`**.
+  * If the user lacks any of the required scopes $\rightarrow$ **`403 Forbidden`**.
+</Callout>

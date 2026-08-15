@@ -10,6 +10,7 @@
     "use-pre-post-hooks",
     "use-unit-of-work",
     "mask-sensitive-fields",
-    "expose-dynamic-schemas"
+    "expose-dynamic-schemas",
+    "enforce-permission-scopes"
   ]
 }
