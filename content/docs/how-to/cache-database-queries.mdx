@@ -1,0 +1,83 @@
+---
+title: How to cache database queries
+description: Accelerate queries using BaseCache with automatic Pydantic deserialization and resilient local LRU fallback.
+icon: Database
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore's `BaseCache` provides a unified caching interface. It connects to distributed Redis instances while seamlessly degrading to a thread-safe in-memory `TTLLRUCache` if Redis is offline.
+
+<Steps>
+  <Step>
+    ### 1. Initialize the Cache Client
+
+    Configure the global cache client in your `main.py` (or within a plugin lifecycle hook):
+
+    ```python
+    # main.py
+    from zcore import settings
+    from zcore.cache import init_cache
+
+    # Initializes distributed Redis connection and starts background local eviction loop
+    init_cache(redis_url=settings.REDIS_URL)
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Implement the Cache-Aside Pattern
+
+    Instantiate `BaseCache` with a domain prefix namespace, and pass `target_type` to automatically parse JSON into validated Pydantic models:
+
+    ```python
+    # services.py or repositories.py
+    import uuid
+    from zcore.cache import BaseCache
+    from .schemas import TaskResponse
+    from .models import Task
+
+    class TaskService:
+        def __init__(self, repo):
+            self.repo = repo
+            self.cache = BaseCache[TaskResponse](prefix="tasks")
+
+        async def get_task_details(self, task_id: uuid.UUID) -> TaskResponse:
+            cache_key = str(task_id)
+
+            # 1. Attempt to fetch from Cache (Auto-deserializes into TaskResponse)
+            cached_data = await self.cache.get(cache_key, target_type=TaskResponse)
+            if cached_data:
+                return cached_data
+
+            # 2. Cache Miss: Fetch from database
+            db_record = await self.repo.get(id=task_id)
+            task_response = TaskResponse.model_validate(db_record)
+
+            # 3. Populate Cache (Auto-serializes Pydantic model to JSON, default TTL = 1 hour)
+            await self.cache.set(cache_key, task_response, ttl=3600)
+            
+            return task_response
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Invalidate Cache on Mutations
+
+    Purge cached records when modifying or deleting database entities:
+
+    ```python
+    async def update_task(self, task_id: uuid.UUID, schema):
+        updated = await self.repo.update(task_id, schema)
+        
+        # Evict key from both Redis and local memory store
+        await self.cache.delete(str(task_id))
+        return updated
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🛡️">
+  **Fail-Safe In-Memory Fallback:**
+  If Redis is unavailable or unconfigured (`REDIS_URL=None`), `BaseCache` automatically stores records in an in-memory `TTLLRUCache`. Expired keys are periodically swept by a background worker loop every 60 seconds.
+</Callout>

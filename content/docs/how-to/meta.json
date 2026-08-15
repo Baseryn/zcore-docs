@@ -12,6 +12,7 @@
     "mask-sensitive-fields",
     "expose-dynamic-schemas",
     "enforce-permission-scopes",
-    "upload-files-securely"
+    "upload-files-securely",
+    "cache-database-queries"
   ]
 }
