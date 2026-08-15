@@ -1,0 +1,115 @@
+---
+title: How to expose dynamic schemas (?schema=true)
+description: Generate frontend form schemas automatically with contextual, role-based field pruning.
+icon: FileJson
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Frontend developers and low-code platforms (like Retool, Appsmith, or JSON Schema form generators) can append `?schema=true` to any ZCore endpoint to fetch its active schema definition.
+
+<Steps>
+  <Step>
+    ### 1. Enable Dynamic Schemas on the Router
+
+    Set `expose_schemas = True` globally, or specify a targeted set of `RouteKey` actions:
+
+    ```python
+    # routers.py
+    from zcore import BaseRouter, RouteKey
+    from .models import Task
+    from .schemas import TaskCreate, TaskUpdate, TaskResponse
+    from .services import TaskService
+
+    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+        model = Task
+        create_schema = TaskCreate
+        update_schema = TaskUpdate
+        schema_out = TaskResponse
+        service = TaskService
+        prefix = "/tasks"
+
+        # Option A: Enable for all CRUD endpoints
+        expose_schemas = True
+
+        # Option B: Enable selectively (e.g., only Create & Update forms)
+        # expose_schemas = {RouteKey.POST, RouteKey.UPDATE}
+
+    router_instance = TaskRouter()
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Request Schema via HTTP
+
+    Append `?schema=true` to the target endpoint:
+
+    ```bash
+    # Fetch Output Display Schema for viewing tasks (GET)
+    curl -X GET "http://localhost:8000/tasks?schema=true"
+
+    # Fetch Input Form Schema for creating a task (POST)
+    curl -X POST "http://localhost:8000/tasks?schema=true"
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Real-World Response Structure
+
+    ZCore returns the full Pydantic v2 JSON Schema specification (including `$defs` for nested relations and validation rules). Any restricted field defined in `ctx.restricted_fields` is **automatically pruned** from both `properties` and `required` arrays:
+
+    ```json
+    {
+      "success": true,
+      "message": "Schema generated successfully",
+      "data": {
+        "$defs": {
+          "TaskResponse": {
+            "properties": {
+              "id": { "format": "uuid", "title": "Id", "type": "string" },
+              "title": { "title": "Title", "type": "string" },
+              "is_completed": { "default": false, "title": "Is Completed", "type": "boolean" }
+              // Sensitive fields like 'salary' or 'assignee_email' are pruned automatically!
+            },
+            "required": ["id", "title"],
+            "title": "TaskResponse",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "success": { "default": true, "title": "Success", "type": "boolean" },
+          "message": { "default": "Success", "title": "Message", "type": "string" },
+          "data": {
+            "anyOf": [
+              { "items": { "$ref": "#/$defs/TaskResponse" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "meta": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "default": null,
+            "title": "Meta"
+          }
+        },
+        "title": "ResponseWrapper[list[TaskResponse]]",
+        "type": "object"
+      },
+      "meta": {
+        "restricted_fields": ["tasks.view.salary"]
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🧠">
+  **Intelligent Method Resolution:**
+  * For `POST`, `PUT`, and `PATCH` requests, ZCore automatically resolves and returns the **Input Body Schema** (`create_schema` / `update_schema`).
+  * For `GET` requests, ZCore resolves and returns the **Output Serialization Schema** (`schema_out`).
+</Callout>
