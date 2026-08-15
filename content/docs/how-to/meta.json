@@ -5,6 +5,7 @@
     "wire-dependencies",
     "register-singleton-vs-scoped",
     "override-repository",
-    "implement-cursor-pagination"
+    "implement-cursor-pagination",
+    "build-complex-search"
   ]
 }
