@@ -1,0 +1,62 @@
+---
+title: How to register Singleton vs Scoped services
+description: Understand when to use global singletons, request-scoped instances, and transient dependencies.
+icon: Layers
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore's `IoCContainer` manages three distinct dependency lifecycles to balance performance and thread/request isolation.
+
+### Supported Lifecycles
+
+<Steps>
+  <Step>
+    ### 1. Singleton (Application-Wide)
+
+    Instantiated once and shared across the entire lifespan of the application.
+
+    ```python
+    from zcore.kernel.di import container
+
+    # Pass the interface and the pre-constructed instance
+    container.register_singleton(RedisClient, RedisClient())
+    ```
+
+    * **Best for:** External client pools (Redis, S3/MinIO), shared configuration objects, or resource-heavy factories.
+  </Step>
+
+  <Step>
+    ### 2. Scoped (Request-Wide)
+
+    Resolved once per HTTP request context (`scope_id`) and cached for the duration of that request. It is automatically purged when the connection closes.
+
+    ```python
+    # Register an implementation to be resolved per request scope
+    container.register_scoped(IUnitOfWork, UnitOfWork)
+
+    # Or register a pre-constructed instance into the active scope (used by middlewares)
+    container.register_scoped_instance(AsyncSession, db_session)
+    ```
+
+    * **Best for:** Database sessions, user context objects, transaction units.
+  </Step>
+
+  <Step>
+    ### 3. Transient (Always Instantiated)
+
+    A completely new instance is created on every resolution request.
+
+    ```python
+    container.register_transient(PdfReportGenerator, PdfReportGenerator)
+    ```
+
+    * **Best for:** Stateless helper classes, dynamic template compilers, lightweight utilities.
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="💡">
+  **Automatic Auto-Wiring:** 
+  You **do not** need to manually register your `BaseRepository` or `BaseService` subclasses. ZCore's IoC container automatically auto-wires them on the fly and binds them to the active request-scoped `AsyncSession` managed by `ScopedDependencyMiddleware`.
+</Callout>

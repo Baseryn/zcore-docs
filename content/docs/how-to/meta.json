@@ -2,6 +2,7 @@
   "pages": [
     "extend-settings",
     "use-cli-commands",
-    "wire-dependencies"
+    "wire-dependencies",
+    "register-singleton-vs-scoped"
   ]
 }
