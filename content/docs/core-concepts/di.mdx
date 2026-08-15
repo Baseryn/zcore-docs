@@ -1,0 +1,94 @@
+---
+title: Dependency Injection (IoC Container)
+description: Explore ZCore's custom Inversion of Control container, constructor auto-wiring, signature caching, and lifecycle management.
+icon: Cable
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore does not rely on FastAPI's native `Depends()` chains for internal service wiring. Instead, it implements a high-performance **`IoCContainer`** designed for constructor auto-wiring and clean architecture separation.
+
+---
+
+## 1. The Problem with Nested `Depends()`
+
+In standard FastAPI, if a route depends on a service, the service depends on a repository, and the repository depends on an `AsyncSession`, you end up with deeply nested, tightly coupled `Depends()` chains in your HTTP layer:
+
+```python
+# Standard FastAPI (High coupling & boilerplate)
+@router.post("/tasks")
+def create_task(
+    service: TaskService = Depends(get_task_service) # get_task_service must resolve repo & session
+):
+    pass
+```
+
+This couples web routes directly to internal persistence details, degrades IDE type-hinting, and makes unit testing difficult.
+
+---
+
+## 2. The `Inject[T]` Abstraction
+
+ZCore uses Python's `Annotated` metadata system to seamlessly bridge FastAPI's route dependency injection with ZCore's IoC container:
+
+```python
+# ZCore Approach (Clean & Decoupled)
+from zcore import Inject
+
+@router.post("/tasks")
+async def create_task(service: Inject[TaskService]):
+    await service.create(...)
+```
+
+<Callout type="info" emoji="🧩">
+  **Compilation Magic:** When you annotate a parameter with `service: Inject[TaskService]`, the `Inject` class intercepts the `__class_getitem__` dunder method. It compiles this into:
+  `Annotated[TaskService, Depends(Injector(TaskService))]`.
+  
+  This preserves 100% compatibility with FastAPI's OpenAPI generation while delegating full dependency graph assembly to ZCore's IoC container.
+</Callout>
+
+---
+
+## 3. Lifecycle Management
+
+The `IoCContainer` coordinates three distinct instance lifecycles:
+
+1. **Singleton:** Instantiated once for the entire application lifespan and stored in `container._singletons` (e.g., `EventDispatcher`, `Settings`).
+2. **Scoped:** Instantiated once per ASGI HTTP request and bound to the coroutine context via `ContextVar` (`_scoped_instances`). Managed and automatically purged by `ScopedDependencyMiddleware` after the response is sent (e.g., `AsyncSession`).
+3. **Transient:** A fresh, independent instance is created every time `container.resolve()` is executed (e.g., stateless helper utilities).
+
+---
+
+## 4. Auto-Wiring & Signature Caching
+
+Inside your classes and services, you do not need decorators. Declare dependencies in the constructor via standard type hints:
+
+```python
+class TaskService:
+    # ZCore inspects the type hint and resolves TaskRepo automatically
+    def __init__(self, repository: TaskRepo):
+        self.repository = repository
+```
+
+When `container.resolve(TaskService)` is invoked:
+1. The container inspects `TaskService.__init__` using `inspect.signature` and `typing.get_type_hints`.
+2. **Signature Caching:** To eliminate the runtime performance overhead of Python reflection, ZCore caches the constructor parameter dependencies in `_dependency_signature_cache` and constructor references in `_constructor_cache`.
+3. Subsequent resolutions bypass reflection completely, reading directly from the warm signature cache to construct instances with near-zero latency.
+
+---
+
+## 5. Circular Dependency Detection
+
+If `ServiceA` depends on `ServiceB`, and `ServiceB` depends on `ServiceA`, a naive container would enter infinite recursion and crash the interpreter.
+
+ZCore tracks the active resolution graph using an internal `_stack` set during auto-wiring. If a class is encountered that already exists in the active stack, it raises a readable `CircularDependencyError`:
+
+```text
+CircularDependencyError: Circular dependency detected: ServiceA -> ServiceB -> ServiceA
+```
+
+<Callout type="info" emoji="⚡">
+  **Constructor vs Route Usage:**
+  * **In Class Constructors (`__init__`):** Use plain Python type hints (`def __init__(self, repo: TaskRepo):`).
+  * **In FastAPI Route Endpoints:** Use `Inject[T]` (`async def route(service: Inject[TaskService]):`).
+</Callout>

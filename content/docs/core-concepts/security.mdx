@@ -1,0 +1,122 @@
+---
+title: Security & Authentication Architecture
+description: Explore ZCore's cryptographic services (Argon2id, JWT), the BaseAuth template pipeline, fail-fast production assertions, and scope permissions.
+icon: Lock
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Security in ZCore is not an afterthought; it is integrated directly into the architectural core. The framework provides modern cryptographic primitives, fail-fast production safeguards, and an automated authentication/authorization pipeline.
+
+---
+
+## 1. Cryptographic Services (Argon2id & JWT)
+
+### Memory-Hard Password Hashing
+ZCore uses **Argon2id** (via `argon2-cffi`), the winner of the Password Hashing Competition. Unlike legacy algorithms like bcrypt or PBKDF2, Argon2id is memory-hard, providing strong resistance against GPU and ASIC cracking rigs.
+
+ZCore exposes dynamic parameter tuning directly via the `Settings` class:
+* `ARGON2_MEMORY_COST`: Memory capacity allocated per hash calculation (Default: `65536` KB / 64 MB).
+* `ARGON2_TIME_COST`: Number of hashing iterations (Default: `3`).
+* `ARGON2_PARALLELISM`: Parallel processing threads (Default: `4`).
+
+```python
+from zcore.security import Security
+
+# Generate Argon2id hash
+hashed_pwd = Security.hash_password("SuperSecretPassword123")
+
+# Verify plain password against stored hash
+is_valid = Security.verify_password("SuperSecretPassword123", hashed_pwd)
+```
+
+### JWT Management & Asymmetric Key Support
+`Security` handles JSON Web Token creation, signature verification, and expiration assertions. It supports both symmetric (`SECRET_KEY`) and enterprise asymmetric key pairs (`JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` for algorithms like RS256).
+
+---
+
+## 2. Fail-Fast Production Secret Assertion
+
+A common deployment disaster in web engineering is deploying an application to production while forgetting to change the default secret key.
+
+ZCore implements an active **Fail-Fast Startup Assertion** in `Security._get_signing_keys()`:
+
+```python
+# Internal fail-fast validation
+if is_prod and is_fallback:
+    raise RuntimeError(
+        "FATAL SECURITY VIOLATION: You are running in PRODUCTION environment "
+        "using the insecure default fallback SECRET_KEY. Application startup aborted."
+    )
+```
+
+If `settings.DEBUG` is `False` (Production) and `settings.SECRET_KEY` matches the default insecure fallback, the application **aborts startup immediately**.
+
+---
+
+## 3. The `BaseAuth[T]` Template Pipeline
+
+ZCore does not couple your application to a rigid user table. Instead, **`BaseAuth[T]`** is a Generic template class that coordinates token extraction, cryptographic verification, caching, and context binding:
+
+<Mermaid chart="graph TB
+    Req[Incoming HTTP Request with Bearer Token] --> Extract[1. Extract token via OAuth2PasswordBearer]
+    Extract --> Decode[2. Security.decode_jwt validates signature & exp]
+    Decode --> CacheCheck{3. Check BaseCache user:identity}
+    CacheCheck -- Hit --> ActiveCheck[4. Validate is_active == True]
+    CacheCheck -- Miss --> Fetch[5. Execute self.fetch_user identity]
+    Fetch --> SetCache[Store in BaseCache TTL: 300s]
+    SetCache --> ActiveCheck
+    ActiveCheck --> Bind[6. Bind attributes to ZContext ctx.user_id, restricted_fields]
+    Bind --> Done[Proceed to Route Handler]"/>
+
+### Custom Authentication Implementation
+
+```python
+# auth.py
+from pydantic import BaseModel
+import uuid
+from zcore import BaseAuth
+
+class AppUser(BaseModel):
+    id: uuid.UUID
+    is_active: bool = True
+    is_superuser: bool = False
+    scopes: list[str] = []
+    all_restricted_fields: list[str] = []
+
+class CustomAuth(BaseAuth[AppUser]):
+    async def fetch_user(self, identity: str) -> AppUser | None:
+        # Resolve user from database repository
+        db_user = await user_repo.get_by_username(identity)
+        return AppUser.model_validate(db_user) if db_user else None
+```
+
+---
+
+## 4. Scope-Based Authorization (`HasScopes`)
+
+ZCore employs an OAuth2/OIDC compatible scope authorization model via the **`HasScopes`** permission class:
+
+* **Scope Resolution:** Resolves user scopes dynamically from `ctx.get("scopes")` or the `UserProtocol` instance.
+* **Superuser Bypass:** If `allow_superuser=True` (default), users with `is_superuser = True` bypass scope assertions entirely, simplifying administrative workflows.
+* **Standardized Status Codes:**
+  * Unauthenticated or inactive user $\rightarrow$ `401 Unauthorized`.
+  * Insufficient scopes $\rightarrow$ `403 Forbidden`.
+
+```python
+from fastapi import APIRouter, Depends
+from zcore.security import HasScopes
+
+router = APIRouter()
+
+@router.delete(
+    "/finance/invoices/{id}",
+    dependencies=[Depends(HasScopes("invoices:delete", "finance:admin"))]
+)
+async def delete_invoice(id: str):
+    return {"status": "deleted"}
+```
+
+<Callout type="info" emoji="👑">
+  **Zero-Boilerplate Routing:** When using `BaseRouter`, `HasScopes` dependencies are automatically calculated and injected for every CRUD endpoint based on `model.actions()`.
+</Callout>

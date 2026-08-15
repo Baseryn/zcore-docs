@@ -1,0 +1,80 @@
+---
+title: Dynamic Search Engine & Security
+description: How ZCore compiles nested JSON filters into safe SQL, protects against DoS attacks, and enforces column-level security.
+icon: Search
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Exposing arbitrary database filtering to frontend clients is traditionally dangerous. ZCore's **`SearchEngine`** provides a declarative, expressive JSON search protocol that compiles down to safe, optimized SQLAlchemy 2.0 AST expressions while enforcing strict security boundaries.
+
+---
+
+## 1. The Compilation Pipeline
+
+When a `SearchRequest` payload is received (typically via `POST /search`), the `SearchEngine` coordinates execution across three distinct phases:
+
+<Mermaid chart="graph TB
+    Req[SearchRequest JSON] --> Val[1. Security & Depth Validation]
+    Val --> Exp[2. Expression & Loader Compilation]
+    Exp --> Exec[3. SQLAlchemy Execution & Pagination]"/>
+
+1. **Validation & Security Assertion:** Inspects all requested field paths, sort columns, and inclusion routes against `ctx.restricted_fields` and schema mappers.
+2. **Expression Building:** Recursively translates structured JSON operators (`eq`, `ne`, `gt`, `ilike`, `in`, `is_null`, `and`, `or`) into SQLAlchemy binary comparison clauses.
+3. **Execution & Eager-Loading:** Injects relation loaders (`joinedload` / `selectinload`), applies sorting, and passes the query to the repository paginator.
+
+---
+
+## 2. Security: Column & Relation Level Access Control
+
+The defining security feature of `SearchEngine` is its seamless integration with **`ZContext`**.
+
+Before compiling any comparison clause, the engine invokes `_validate_filter_field`. This recursively resolves dot-paths (e.g., `assignee.profile.salary`) and validates them against the active user's `ctx.restricted_fields`:
+
+```python
+# Internal security validation in search.py
+if self._is_path_restricted(current_path, restricted):
+    raise ForbiddenError(f"Filtering by restricted path '{current_path}' is forbidden.")
+```
+
+<Callout type="info" emoji="🛡️">
+  **Protection Against Data Inference:**
+  If a user lacks permission to view `tasks.salary`, and attempts to deduce salaries by sending:
+  `{ "field": "salary", "op": "gt", "value": 80000 }`
+  
+  The engine blocks the query before it hits the database and raises a `ForbiddenError`. Users cannot probe or infer values for columns they are unauthorized to access.
+</Callout>
+
+---
+
+## 3. Security: Denial of Service (DoS) Defense
+
+Malicious clients can craft massive, deeply nested `AND`/`OR` trees or infinite recursive relation joins to exhaust server memory and CPU cycles.
+
+ZCore enforces hard boundaries during the validation sweep:
+
+* **Filter Nesting Depth:** Recursive filter structures are limited to a maximum depth of **3 levels**. Exceeding this raises a `ValidationError("Search query filter structure is too complex.")`.
+* **Relation Include Depth:** The `include` array is strictly bounded to a maximum depth of **3 relation hops** (e.g., `["organization.owner.profile"]`).
+
+---
+
+## 4. Intelligent Eager-Loading Optimization
+
+The `include` parameter allows clients to request relational graphs dynamically without triggering N+1 database queries. The engine inspects SQLAlchemy model mappers to choose the optimal loader strategy:
+
+* **To-Many Relationships (`rel.uselist == True`):** Automatically compiled with **`selectinload`** to prevent Cartesian product row duplication.
+* **To-One Relationships (`rel.uselist == False`):** Automatically compiled with **`joinedload`** for single-query JOIN efficiency.
+
+---
+
+## 5. Relational Dot-Path Resolution
+
+When filtering across foreign relations (e.g., `{ "field": "author.email", "op": "eq", "value": "test@core.com" }`), the engine resolves the target model dynamically:
+
+* For **To-One** relations: Compiles to `Model.author.has(Author.email == "test@core.com")`.
+* For **To-Many** relations: Compiles to `Model.comments.any(Comment.status == "approved")`.
+
+<Callout type="info" emoji="⚡">
+  **SQL Injection & Wildcard Sanitization:**
+  All `ilike` operations automatically escape SQL wildcard characters (`%`, `_`, `\`) to prevent query distortion or wildcard injection attacks.
+</Callout>

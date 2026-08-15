@@ -1,0 +1,57 @@
+---
+title: CLI & Structured Logging
+description: Deep dive into ZCore's introspection-based environment scaffolding and unified structlog observability pipeline.
+icon: Terminal
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore provides native tooling to streamline developer ergonomics and guarantee production observability through introspection-driven CLI commands and a centralized, context-aware logging pipeline.
+
+---
+
+## 1. Dynamic Environment Introspection (`zc genenv`)
+
+Out-of-sync environment templates (`.env.example`) are a frequent source of deployment failures. ZCore eliminates manual `.env` synchronization through runtime class introspection.
+
+### How `zc genenv` Works
+1. Imports your application package context (`main.py`).
+2. Evaluates all registered subclasses of `Settings` via `Settings.__subclasses__()` and selects the active schema configuration.
+3. Iterates over Pydantic's `model_fields`, formats default values, and writes a clean `.env.example` file.
+
+```bash
+# Generate .env.example based on your active AppSettings class
+zc genenv
+
+# Overwrite an existing configuration template
+zc genenv --force -o .env.production.example
+```
+
+---
+
+## 2. Structured Logging Pipeline (`structlog`)
+
+Standard FastAPI, Uvicorn, and SQLAlchemy logging often outputs unformatted, duplicated text streams that are difficult to parse in log aggregators.
+
+ZCore's `setup_logging()` intercepts and unifies this pipeline:
+
+<Mermaid chart="graph TB
+    Uvicorn[Uvicorn Logs] --> Clear[Clear Default Handlers]
+    SQL[SQLAlchemy Queries] --> Clear
+    App[App & Service Logs] --> Clear
+    Clear --> Struct[Unified structlog Engine]
+    Struct --> Context[structlog.contextvars merge request_id]
+    Context --> Mode{settings.DEBUG?}
+    Mode -- True --> Dev[ConsoleRenderer + rich.traceback]
+    Mode -- False --> Prod[JSONRenderer for Grafana/Datadog]"/>
+
+1. **Suppression of Duplicate Stream Handlers:** Clears default stream handlers from `uvicorn`, `uvicorn.access`, and `sqlalchemy.engine`, setting `propagate = True` to channel all records into `structlog`.
+2. **Contextual Distributed Tracing:** `RequestLogMiddleware` extracts or generates an `x-request-id` header and binds it via `structlog.contextvars.bind_contextvars(request_id=...)`. Every log message emitted across repositories, services, or events automatically includes the unique `request_id`.
+3. **Adaptive Output Rendering:**
+   * **Development (`DEBUG = True`):** Colorized, human-readable console rendering with formatted tracebacks via `rich.traceback`.
+   * **Production (`DEBUG = False`):** Serialized, high-throughput JSON records containing ISO timestamps, log levels, and contextual metadata, ready for ingestion by Grafana Loki, ELK, or Datadog.
+
+<Callout type="info" emoji="⚡">
+  **SQL Query Diagnostics:**
+  `DatabaseManager` hooks directly into SQLAlchemy cursor lifecycle events (`before_cursor_execute` and `after_cursor_execute`). It logs clean, sanitized SQL statements along with execution durations in milliseconds (`duration_ms`), while automatically filtering out internal schema catalog noise.
+</Callout>
