@@ -1,0 +1,189 @@
+---
+title: ZContext
+description: API reference for the asynchronous, thread-safe request context manager and state isolation engine.
+icon: Boxes
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`ZContext` provides a robust, thread-safe, and coroutine-aware context storage system built on Python's native `contextvars`. It manages request-scoped state (such as user identity and restricted fields), ensuring absolute state isolation across concurrent asynchronous task boundaries.
+
+## Class Definition & Global Instance
+
+ZCore exposes both the class definition and the pre-initialized global `ctx` singleton:
+
+```python
+from zcore import ctx, ZContext
+# or: from zcore.context import ctx, ZContext
+
+class ZContext:
+    ...
+```
+
+---
+
+## Strongly-Typed Properties
+
+### `user_id`
+
+Retrieves or sets the authenticated user identifier for the active coroutine context.
+
+```python
+# Access
+current_id: uuid.UUID | None = ctx.user_id
+
+# Set (Accepts uuid.UUID, UUID string, or None)
+ctx.user_id = "123e4567-e89b-12d3-a456-426614174000"
+```
+
+<TypeTable
+  type={{
+    returns: {
+      type: 'Optional[uuid.UUID]',
+      description: 'The authenticated user UUID if set, otherwise None.',
+    }
+  }}
+/>
+
+<Callout type="warn" emoji="⚠️">
+  The setter strictly validates string inputs. Passing an invalid UUID string raises a `ValueError`. Passing an unsupported type raises a `TypeError`.
+</Callout>
+
+### `restricted_fields`
+
+Accesses or updates the collection of data fields restricted in the current context.
+
+```python
+# Access
+restrictions: frozenset[str] = ctx.restricted_fields
+
+# Set
+ctx.restricted_fields = ["tasks.view.salary", "tasks.create.role"]
+```
+
+<TypeTable
+  type={{
+    returns: {
+      type: 'frozenset[str]',
+      description: 'An immutable frozenset of restricted field paths (defaults to frozenset()).',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="🔒">
+  The setter converts incoming iterables into an immutable `frozenset`. This prevents business logic layers from accidentally mutating security restriction rules mid-flight.
+</Callout>
+
+---
+
+## Dynamic Key-Value Methods
+
+### `set`
+
+Stores an arbitrary key-value entry in the current execution context store.
+
+```python
+ctx.set("tenant_id", "enterprise_01")
+```
+
+<TypeTable
+  type={{
+    key: {
+      type: 'str',
+      description: 'The unique string identifier for the context entry.',
+    },
+    value: {
+      type: 'Any',
+      description: 'The data payload to persist in the current scope.',
+    }
+  }}
+/>
+
+### `get`
+
+Retrieves a value from the current execution context.
+
+```python
+tenant = ctx.get("tenant_id", default="public")
+```
+
+<TypeTable
+  type={{
+    key: {
+      type: 'str',
+      description: 'The identifier key for the requested context entry.',
+    },
+    default: {
+      type: 'Any',
+      default: 'None',
+      description: 'The fallback value to return if the key is not found.',
+    },
+    returns: {
+      type: 'Any',
+      description: 'The associated value or the specified default.',
+    }
+  }}
+/>
+
+### `remove`
+
+Deletes a specific entry from the current execution context store.
+
+```python
+ctx.remove("tenant_id")
+```
+
+<TypeTable
+  type={{
+    key: {
+      type: 'str',
+      description: 'The identifier key to remove from the context store.',
+    }
+  }}
+/>
+
+---
+
+## Scoping & Contextvars Lifecycle
+
+### `scope`
+
+Context manager for localized state overrides within a specific code block. Temporarily sets attributes (including properties like `user_id`) and automatically restores the previous state upon block exit.
+
+```python
+# Temporarily act as System User for a specific batch operation
+with ctx.scope(user_id=SYSTEM_UUID, tenant_id="system"):
+    await perform_maintenance_task()
+
+# Context automatically reverts to original user_id and tenant_id here
+```
+
+<TypeTable
+  type={{
+    '**kwargs': {
+      type: 'Any',
+      description: 'Key-value pairs to set temporarily in the context scope.',
+    },
+    returns: {
+      type: 'ContextManager',
+      description: 'A context manager restoring previous state upon exit.',
+    }
+  }}
+/>
+
+### `initialize`
+
+Resets the context store to an empty state for the current async task scope. Returns a `contextvars.Token` used for restoring previous state.
+
+```python
+token: Token[Dict[str, Any]] = ctx.initialize()
+```
+
+### `reset`
+
+Restores the context store to the state corresponding to the provided token.
+
+```python
+ctx.reset(token)
+```

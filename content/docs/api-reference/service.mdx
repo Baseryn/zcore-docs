@@ -1,0 +1,413 @@
+---
+title: BaseService
+description: Complete API reference for the BaseService class, CRUD orchestration, execution methods, and lifecycle hooks.
+icon: Layers
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+`BaseService` orchestrates domain logic, coordinates transaction boundaries via `_safe_commit()`, and exposes pre/on/post lifecycle interception hooks.
+
+## Class Definition
+
+```python
+from zcore import BaseService
+
+class BaseService(
+    Generic[ModelType],
+    ReadServiceMixin[ModelType],
+    WriteServiceMixin[ModelType],
+    SearchServiceMixin[ModelType]
+):
+    def __init__(self, model: Type[ModelType], repository: "BaseRepository"):
+        ...
+```
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    model: {
+      type: 'Type[ModelType]',
+      description: 'The declarative SQLAlchemy model class matching this service domain.',
+    },
+    repository: {
+      type: 'BaseRepository',
+      description: 'The data persistence repository layer coordinating model access.',
+    }
+  }}
+/>
+
+---
+
+## Read Methods
+
+### `get`
+
+Fetches a single domain entity by dynamic filters and applies the `post_get` hook.
+
+```python
+async def get(
+    self, 
+    *criterion: Any, 
+    fields: Optional[List[Any]] = None, 
+    options: Optional[List[ExecutableOption]] = None,
+    **filters: Any
+) -> ModelType: ...
+```
+
+<TypeTable
+  type={{
+    '*criterion': {
+      type: 'Any',
+      description: 'Dynamic positional filter expressions.',
+    },
+    fields: {
+      type: 'List[Any] | None',
+      default: 'None',
+      description: 'Selective list of model fields to return (load_only).',
+    },
+    options: {
+      type: 'List[ExecutableOption] | None',
+      default: 'None',
+      description: 'SQLAlchemy execution/loader options.',
+    },
+    '**filters': {
+      type: 'Any',
+      description: 'Dynamic keyword equality filters.',
+    },
+    returns: {
+      type: 'ModelType',
+      description: 'The processed database model instance. Raises EntityNotFound if not found.',
+    }
+  }}
+/>
+
+### `get_by_ids`
+
+Fetches a sequence of domain entities by their identifiers, applying the `post_get_multi` hook.
+
+```python
+async def get_by_ids(
+    self, 
+    ids: List[Any], 
+    fields: Optional[List[Any]] = None, 
+    options: Optional[List[ExecutableOption]] = None
+) -> Sequence[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    ids: {
+      type: 'List[Any]',
+      description: 'List of target entity primary keys to retrieve.',
+    },
+    fields: {
+      type: 'List[Any] | None',
+      default: 'None',
+      description: 'Selective list of model fields to return.',
+    },
+    options: {
+      type: 'List[ExecutableOption] | None',
+      default: 'None',
+      description: 'SQLAlchemy execution loader options.',
+    },
+    returns: {
+      type: 'Sequence[ModelType]',
+      description: 'A sequence of retrieved and processed database model instances.',
+    }
+  }}
+/>
+
+### `get_list`
+
+Fetches a paginated or complete listing of entities, applying the `post_get_multi` hook.
+
+```python
+async def get_list(
+    self, 
+    pagination: Any = None, 
+    fields: Optional[List[Any]] = None, 
+    options: Optional[List[ExecutableOption]] = None,
+    *criterion: Any,
+    **filters: Any
+) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    pagination: {
+      type: 'PageNumberParams | CursorParams | None',
+      default: 'None',
+      description: 'Pagination parameters (cursor or offset models). If None, returns unpaginated list.',
+    },
+    fields: {
+      type: 'List[Any] | None',
+      default: 'None',
+      description: 'Selective list of model fields to load.',
+    },
+    options: {
+      type: 'List[ExecutableOption] | None',
+      default: 'None',
+      description: 'SQLAlchemy execution options.',
+    },
+    '*criterion': {
+      type: 'Any',
+      description: 'Positional binary filter expressions.',
+    },
+    '**filters': {
+      type: 'Any',
+      description: 'Keyword key-value arguments for equality filters.',
+    },
+    returns: {
+      type: 'Sequence[ModelType] | PaginatedResult[ModelType]',
+      description: 'A paginated response container or sequence of processed models.',
+    }
+  }}
+/>
+
+### `exist`
+
+Verifies the existence of a target entity matching criteria in the database.
+
+```python
+async def exist(self, *criterion: Any, **filters: Any) -> bool: ...
+```
+
+### `count`
+
+Counts the volume of entities matching dynamic criteria.
+
+```python
+async def count(self, *criterion: Any, **filters: Any) -> int: ...
+```
+
+---
+
+## Write Methods
+
+### `create`
+
+Orchestrates the creation of an entity, merging `pre_create` data, calling `on_create`, executing `post_create`, and invoking `_safe_commit()`.
+
+```python
+async def create(self, schema: BaseModel, **extra_data: Any) -> ModelType: ...
+```
+
+<TypeTable
+  type={{
+    schema: {
+      type: 'BaseModel',
+      description: 'Validated Pydantic schema containing properties for the new record.',
+    },
+    '**extra_data': {
+      type: 'Any',
+      description: 'Dynamic fields to merge into the creation payload.',
+    },
+    returns: {
+      type: 'ModelType',
+      description: 'The created and processed database model instance.',
+    }
+  }}
+/>
+
+### `create_multi`
+
+Orchestrates batch creation of multiple domain entities with lifecycle hooks and safe commit.
+
+```python
+async def create_multi(
+    self, 
+    schemas: List[BaseModel], 
+    refresh: bool = False
+) -> Sequence[ModelType]: ...
+```
+
+### `update`
+
+Orchestrates modifications to an existing entity, merging `pre_update` data, calling `on_update`, executing `post_update`, and invoking `_safe_commit()`.
+
+```python
+async def update(
+    self, 
+    id: Any, 
+    schema: BaseModel, 
+    partial: bool = False, 
+    **extra_data: Any
+) -> ModelType: ...
+```
+
+<TypeTable
+  type={{
+    id: {
+      type: 'Any',
+      description: 'The primary key of the record to update.',
+    },
+    schema: {
+      type: 'BaseModel',
+      description: 'Validated fields representing the modifications.',
+    },
+    partial: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, applies changes as a partial patch (ignoring unset fields).',
+    },
+    '**extra_data': {
+      type: 'Any',
+      description: 'Extra fields to append to the update payload.',
+    },
+    returns: {
+      type: 'ModelType',
+      description: 'The updated and processed model instance. Raises EntityNotFound if missing.',
+    }
+  }}
+/>
+
+### `update_multi`
+
+Orchestrates batch modifications to multiple existing domain entities.
+
+```python
+async def update_multi(
+    self, 
+    data: Dict[Any, BaseModel], 
+    partial: bool = False, 
+    refresh: bool = False
+) -> Sequence[ModelType]: ...
+```
+
+### `delete`
+
+Orchestrates the deletion of a single entity, triggering `pre_delete`, calling `on_delete`, executing `post_delete`, and invoking `_safe_commit()`.
+
+```python
+async def delete(self, id: Any) -> ModelType: ...
+```
+
+<TypeTable
+  type={{
+    id: {
+      type: 'Any',
+      description: 'The primary key of the record to delete.',
+    },
+    returns: {
+      type: 'ModelType',
+      description: 'The deleted database model instance. Raises EntityNotFound if missing.',
+    }
+  }}
+/>
+
+### `delete_multi`
+
+Orchestrates batch deletions of multiple database records matching the provided list of primary keys.
+
+```python
+async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
+```
+
+---
+
+## Search Methods
+
+### `search`
+
+Triggers `pre_search`, executes `on_search`, and processes results through `post_search`.
+
+```python
+async def search(
+    self, 
+    search_in: SearchRequest, 
+    pagination: Any = None
+) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
+```
+
+---
+
+## Core Execution Methods (`on_*`)
+
+These methods directly call the bound repository and can be overridden to customize persistence mechanics:
+
+* `async def on_create(self, schema: BaseModel, **extra_data: Any) -> ModelType`
+* `async def on_create_multi(self, schemas: List[BaseModel], refresh: bool = False) -> Sequence[ModelType]`
+* `async def on_update(self, id: Any, schema: BaseModel, partial: bool = False, **extra_data: Any) -> Optional[ModelType]`
+* `async def on_update_multi(self, data: Dict[Any, BaseModel], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]`
+* `async def on_delete(self, id: Any) -> Optional[ModelType]`
+* `async def on_delete_multi(self, ids: List[Any]) -> Sequence[ModelType]`
+* `async def on_search(self, search_in: SearchRequest, pagination: Any = None) -> Any`
+
+---
+
+## Lifecycle Hooks Reference
+
+Override these hooks in your service to execute custom business logic before or after operations:
+
+<TypeTable
+  type={{
+    'pre_create(schema)': {
+      type: 'dict | None',
+      description: 'Triggered before insert. Returning a dict merges those values into the insert payload.',
+    },
+    'post_create(model)': {
+      type: 'None',
+      description: 'Triggered immediately after database insert and flush.',
+    },
+    'pre_create_multi(schemas)': {
+      type: 'None',
+      description: 'Triggered before batch insertion.',
+    },
+    'post_create_multi(models)': {
+      type: 'None',
+      description: 'Triggered after batch insertion.',
+    },
+    'pre_update(id, schema, partial)': {
+      type: 'dict | None',
+      description: 'Triggered before update. Returning a dict merges values into the update payload.',
+    },
+    'post_update(model)': {
+      type: 'None',
+      description: 'Triggered immediately after database update and flush.',
+    },
+    'pre_update_multi(data, partial)': {
+      type: 'None',
+      description: 'Triggered before batch update.',
+    },
+    'post_update_multi(models)': {
+      type: 'None',
+      description: 'Triggered after batch update.',
+    },
+    'pre_delete(id)': {
+      type: 'None',
+      description: 'Triggered before single-record deletion.',
+    },
+    'post_delete(model)': {
+      type: 'None',
+      description: 'Triggered after single-record deletion.',
+    },
+    'pre_delete_multi(ids)': {
+      type: 'None',
+      description: 'Triggered before batch deletion.',
+    },
+    'post_delete_multi(models)': {
+      type: 'None',
+      description: 'Triggered after batch deletion.',
+    },
+    'post_get(model)': {
+      type: 'ModelType',
+      description: 'Extension interceptor executed after a single entity is retrieved.',
+    },
+    'post_get_multi(models)': {
+      type: 'Sequence[ModelType]',
+      description: 'Extension interceptor executed after a batch list is retrieved.',
+    },
+    'pre_search(search_in)': {
+      type: 'None',
+      description: 'Triggered before dynamic search query execution.',
+    },
+    'post_search(models)': {
+      type: 'None',
+      description: 'Triggered after dynamic search query execution.',
+    }
+  }}
+/>

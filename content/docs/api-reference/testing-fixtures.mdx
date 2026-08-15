@@ -1,0 +1,176 @@
+---
+title: Testing Fixtures & Orchestrator
+description: API reference for ZCore's composable testing fixtures managing IoC sandboxing, database rollbacks, context mocking, and lifespans.
+icon: Wrench
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore provides a suite of composable test fixtures (`ZTestFixture` subclasses) that isolate your tests by managing state setup and teardown. `ZTestClient` orchestrates these internally, but you can compose them directly for bespoke test setups.
+
+## Base Class: `ZTestFixture`
+
+Abstract base class for all testing fixtures:
+
+```python
+from abc import ABC, abstractmethod
+
+class ZTestFixture(ABC):
+    @abstractmethod
+    async def setUp(self) -> None: ...
+
+    @abstractmethod
+    async def tearDown(self) -> None: ...
+```
+
+---
+
+## Built-in Fixtures
+
+### `ContainerSandbox`
+
+Takes a snapshot of `container._singletons`, `_scoped_definitions`, and `_factories` during `setUp` and restores them during `tearDown`. Guarantees that mock services registered during a test do not leak into subsequent tests.
+
+```python
+from zcore.testing import ContainerSandbox
+
+sandbox = ContainerSandbox()
+```
+
+---
+
+### `DatabaseRollback`
+
+Provides a lightning-fast database testing strategy using nested savepoints without dropping tables or running migrations.
+
+```python
+from zcore.testing import DatabaseRollback
+
+db_rollback = DatabaseRollback()
+```
+
+<Callout type="info" emoji="⚙️">
+  **The Savepoint Pipeline:**
+  1. Opens an asynchronous connection on `db_manager._engine`.
+  2. Begins a root transaction.
+  3. Instantiates an `AsyncSession` with `join_transaction_mode="create_savepoint"`.
+  4. Registers this session as the active scoped instance in the `IoCContainer` and mocks `db_manager.session`.
+  5. On `tearDown`, it rolls back the root transaction, closes the connection, and restores original session providers.
+</Callout>
+
+---
+
+### `UserContext`
+
+Injects mock user metadata into the request-scoped `_request_context_store` during `setUp` and resets the `contextvars.Token` on `tearDown`.
+
+```python
+from zcore.testing import UserContext
+
+user_fixture = UserContext(
+    user_id=uuid.uuid4(),
+    scopes=["tasks:view", "tasks:create"],
+    extra_context={"restricted_fields": ["tasks.view.salary"]}
+)
+```
+
+<TypeTable
+  type={{
+    user_id: {
+      type: 'Any',
+      description: 'The user UUID or identifier to bind to ctx.user_id.',
+    },
+    scopes: {
+      type: 'list[str] | None',
+      default: '[]',
+      description: 'Security permission scopes to bind to ctx.scopes.',
+    },
+    extra_context: {
+      type: 'dict[str, Any] | None',
+      default: '{}',
+      description: 'Additional key-value pairs to populate in the active ZContext store.',
+    }
+  }}
+/>
+
+---
+
+### `DependencyOverride`
+
+Wraps FastAPI's `app.dependency_overrides` dictionary. Applies the override during `setUp` and safely removes it during `tearDown`.
+
+```python
+from zcore.testing import DependencyOverride
+from zcore.security import get_current_user_stub
+
+override_fixture = DependencyOverride(
+    app=app,
+    stub=get_current_user_stub,
+    override_func=mock_user_callable
+)
+```
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The target FastAPI application instance.',
+    },
+    stub: {
+      type: 'Any',
+      description: 'The dependency callable stub to override (e.g., get_current_user_stub).',
+    },
+    override_func: {
+      type: 'Any',
+      description: 'The mock callable or replacement dependency provider.',
+    }
+  }}
+/>
+
+---
+
+### `AppLifespan`
+
+Manages the FastAPI application lifespan context during testing. Enters `app.router.lifespan_context` during `setUp` (triggering plugin startup hooks) and exits it during `tearDown` (triggering shutdown hooks).
+
+```python
+from zcore.testing import AppLifespan
+
+lifespan_fixture = AppLifespan(app=app)
+```
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The FastAPI application whose lifespan context to execute.',
+    }
+  }}
+/>
+
+---
+
+## The `ZTest` Meta-Orchestrator
+
+A composite fixture that chains multiple `ZTestFixture` instances, executing `setUp` in sequential order and `tearDown` in **reversed dependency order**:
+
+```python
+from zcore.testing import ZTest
+
+orchestrator = ZTest(
+    ContainerSandbox(),
+    AppLifespan(app),
+    DatabaseRollback(),
+    UserContext(user_id=mock_id, scopes=["admin"])
+)
+
+# In your custom test runner:
+await orchestrator.setUp()
+try:
+    # Run assertions
+    pass
+finally:
+    # Tears down in reverse order cleanly
+    await orchestrator.tearDown()
+```

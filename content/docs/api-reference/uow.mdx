@@ -1,0 +1,127 @@
+---
+title: UnitOfWork
+description: API reference for the UnitOfWork class managing atomic transactions, lifecycle boundaries, and deferred domain events.
+icon: Boxes
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `UnitOfWork` (UoW) coordinates transactional boundaries and buffers domain events, guaranteeing that events are dispatched only after database modifications have successfully committed. It implements the asynchronous context manager protocol.
+
+## Class Definition
+
+```python
+from zcore import UnitOfWork
+
+class UnitOfWork:
+    def __init__(self, session: AsyncSession, dispatcher: EventDispatcher):
+        ...
+```
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    session: {
+      type: 'AsyncSession',
+      description: 'The underlying active asynchronous SQLAlchemy database session.',
+    },
+    dispatcher: {
+      type: 'EventDispatcher',
+      description: 'The central system event dispatcher used for publishing domain events.',
+    },
+    _pending_events: {
+      type: 'List[Tuple[str, Any]]',
+      description: 'Internal list of buffered domain event tuples (event_name, payload) awaiting successful commit.',
+    }
+  }}
+/>
+
+---
+
+## Methods
+
+### `register_event`
+
+Queues a domain event for post-commit dispatch.
+
+```python
+def register_event(self, event_name: str, payload: Any) -> None: ...
+```
+
+<TypeTable
+  type={{
+    event_name: {
+      type: 'str',
+      description: 'The unique string identifier name of the domain event to queue.',
+    },
+    payload: {
+      type: 'Any',
+      description: 'Contextual payload data accompanying the event.',
+    },
+    returns: {
+      type: 'None',
+      description: 'Appends the event tuple to the internal pending queue.',
+    }
+  }}
+/>
+
+### `commit`
+
+Commits the database session and sequentially dispatches all buffered domain events.
+
+```python
+async def commit(self) -> None: ...
+```
+
+<Callout type="warn" emoji="⚠️">
+  If the database commit fails, the session is rolled back immediately, all pending events are purged, and the original database exception is re-raised.
+</Callout>
+
+<TypeTable
+  type={{
+    returns: {
+      type: 'None',
+      description: 'Awaits database commit and executes self.dispatcher.dispatch() on all buffered events.',
+    }
+  }}
+/>
+
+### `rollback`
+
+Rolls back the database session and clears all pending domain events.
+
+```python
+async def rollback(self) -> None: ...
+```
+
+<TypeTable
+  type={{
+    returns: {
+      type: 'None',
+      description: 'Rolls back the active session and clears the _pending_events buffer.',
+    }
+  }}
+/>
+
+---
+
+## Context Manager Protocol
+
+`UnitOfWork` is designed to be used via `async with`. Entering the context marks the session with `session.info["uow_managed"] = True` to coordinate with `BaseService._safe_commit()`:
+
+```python
+from zcore import UnitOfWork, EventDispatcher
+
+async def checkout(order_repo, inventory_repo, dispatcher: EventDispatcher, order_data):
+    # Automatically manages transaction commit/rollback and event queue on context exit
+    async with UnitOfWork(order_repo.db, dispatcher) as uow:
+        order = await order_repo.create(order_data)
+        await inventory_repo.decrement_stock(order.product_id, 1)
+        
+        # Buffered in memory; dispatched only if the database commit succeeds!
+        uow.register_event("order.completed", {"order_id": str(order.id)})
+```

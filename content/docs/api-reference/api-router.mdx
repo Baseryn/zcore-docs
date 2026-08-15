@@ -1,0 +1,86 @@
+---
+title: ZCoreAPIRoute & Web Adapters
+description: API reference for ZCoreAPIRoute, request body caching, and dynamic OpenAPI schema interceptors.
+icon: GitBranch
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`ZCoreAPIRoute` extends FastAPI's standard `APIRoute`. It configures routes to use `ZCoreJSONResponse`, intercepts `?schema=true` dynamic schema requests, binds action contexts, and manages HTTP `Vary` caching headers.
+
+## Class Definition
+
+```python
+from fastapi.routing import APIRoute
+from zcore.web import ZCoreAPIRoute
+
+class ZCoreAPIRoute(APIRoute):
+    def __init__(self, *args: Any, **kwargs: Any):
+        ...
+```
+
+---
+
+## Attributes
+
+<TypeTable
+  type={{
+    expose_schema: {
+      type: 'bool',
+      description: 'Determines if the route intercepts ?schema=true requests (derived from openapi_extra["expose_schema"]).',
+    },
+    target_model: {
+      type: 'type[BaseModel] | None',
+      description: 'The resolved target Pydantic schema model used for dynamic schema generation.',
+    }
+  }}
+/>
+
+---
+
+## Execution Flow & Lifecycle Interception
+
+<Callout type="info" emoji="⚙️">
+  **Route Execution Pipeline:**
+  1. **Unified Response Class Swap:** If `response_class` is standard `JSONResponse`, it is swapped to `ZCoreJSONResponse` to use the unified serialization pipeline (`json_dumps`).
+  2. **Context Action Binding:** Extracts or calculates the action context (e.g., `POST` $\rightarrow$ `"create"`, `GET` $\rightarrow$ `"view"`, `PUT` $\rightarrow$ `"update"`) and binds it via `ctx.set("action", custom_action)`.
+  3. **Dynamic Schema Interception (`?schema=true`):** If `expose_schema=True` and `?schema=true` is present in query parameters, execution skips the endpoint handler, invokes `target_model.model_json_schema()`, and returns the pruned schema wrapped in a `ResponseWrapper`.
+  4. **CDN Cache Protection (`Vary` Header):** If `ctx.restricted_fields` are active on a JSON response, `ZCoreAPIRoute` automatically appends `Vary: Authorization, Cookie` to prevent intermediate proxies or CDN caches from serving masked responses to unrestricted users.
+</Callout>
+
+---
+
+## Helper Classes & Functions
+
+### `ZCoreRequest`
+
+Custom HTTP `Request` subclass that caches the raw body byte stream to prevent multi-read stream lockups downstream:
+
+```python
+from zcore.web import ZCoreRequest
+
+class ZCoreRequest(Request):
+    async def body(self) -> bytes:
+        # Caches and returns evaluated request payload bytes
+        ...
+```
+
+### `ZCoreJSONResponse`
+
+Specialized `JSONResponse` subclass rendering payloads through ZCore's custom serialization pipeline (`json_dumps`), supporting ISO dates, Decimals, UUIDs, and Pydantic models:
+
+```python
+from zcore.web import ZCoreJSONResponse
+
+class ZCoreJSONResponse(JSONResponse):
+    def render(self, content: Any) -> bytes:
+        return json_dumps(content).encode("utf-8")
+```
+
+### Schema Discovery Helpers
+
+These utility functions inspect FastAPI route signatures to locate the target Pydantic models:
+
+* **`find_input_schema(dependant: Any) -> type[BaseModel] | None`:** Analyzes route body parameters on `POST`, `PUT`, and `PATCH` endpoints to resolve creation/update input models.
+* **`find_output_schema(response_model: Any) -> type[BaseModel] | None`:** Recursively unpacks generic types (like `ResponseWrapper[list[TaskResponse]]`) on `GET` endpoints to extract the underlying response model.

@@ -1,0 +1,96 @@
+---
+title: Inject & Injector
+description: API reference for the dynamic Annotated type marker bridging FastAPI route parameters with the IoC container.
+icon: Cable
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`Inject` is a dynamic type marker that implements unified `Annotated` dependency injection. It allows clean, elegant type annotations in FastAPI route handlers, expanding under the hood into FastAPI `Depends(Injector(T))` resolvers.
+
+## Class Definition
+
+```python
+from typing import Type, TypeVar, Any
+from zcore import Inject
+
+T = TypeVar("T")
+
+class Inject:
+    def __class_getitem__(cls, interface: Type[T]) -> Any:
+        ...
+```
+
+---
+
+## How It Works
+
+When you annotate a route parameter with `service: Inject[TaskService]`, the `__class_getitem__` dunder method intercepts the generic bracket access. It compiles the type into:
+
+```python
+Annotated[TaskService, Depends(Injector(TaskService))]
+```
+
+This guarantees 100% compatibility with FastAPI's endpoint dependency resolver and OpenAPI schema generators, while delegating object graph resolution directly to ZCore's `IoCContainer`.
+
+<Callout type="warn" emoji="⚠️">
+  **Bracket Notation Required:**
+  Always use generic bracket notation (`Inject[Type]`), never function call syntax (`Inject(Type)`). `Inject` relies on Python's `__class_getitem__` class method to generate `Annotated` type wrappers.
+</Callout>
+
+---
+
+## Route Usage Example
+
+Use `Inject[T]` to inject services, repositories, or external providers directly into FastAPI router endpoints without boilerplate:
+
+```python
+from fastapi import APIRouter
+from zcore import Inject
+from .services import TaskService
+
+router = APIRouter(prefix="/tasks", tags=["Tasks"])
+
+@router.get("/")
+async def get_all_tasks(service: Inject[TaskService]):
+    # 'service' is resolved dynamically via container.resolve(TaskService)
+    return await service.get_list()
+```
+
+<Callout type="info" emoji="💡">
+  **Constructor vs Route Injection:**
+  * **In FastAPI Routes:** Use `service: Inject[TaskService]` as a type annotation.
+  * **In Class Constructors (`__init__`):** Plain Python type hints (`def __init__(self, repo: TaskRepo):`) are sufficient. ZCore's IoC container inspects signatures and auto-wires dependencies automatically.
+</Callout>
+
+---
+
+## Helper Class: `Injector`
+
+A callable wrapper class that integrates standard container resolution lookups with FastAPI's `Depends` system.
+
+```python
+from typing import Type, Any
+from zcore.kernel.di import container
+
+class Injector:
+    def __init__(self, interface: Type[Any]):
+        self.interface = interface
+
+    async def __call__(self) -> Any:
+        return container.resolve(self.interface)
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'Type[Any]',
+      description: 'The target dependency class or interface to resolve from the IoC container.',
+    },
+    '__call__()': {
+      type: 'Any',
+      description: 'Asynchronous dependency callable returning container.resolve(self.interface).',
+    }
+  }}
+/>

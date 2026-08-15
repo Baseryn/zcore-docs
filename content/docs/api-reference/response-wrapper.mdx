@@ -1,0 +1,118 @@
+---
+title: ResponseWrapper
+description: API reference for the generic JSON API response envelope and serialization container.
+icon: Mailbox
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`ResponseWrapper` is a standardized generic Pydantic model that enforces a consistent payload structure for all application endpoints. It inherits from `Zchema`, meaning the encapsulated `data` payload participates natively in dynamic, role-based field pruning.
+
+## Class Definition
+
+```python
+from typing import Generic, TypeVar, Optional, Any
+from zcore import Zchema, ResponseWrapper
+
+T = TypeVar("T")
+
+class ResponseWrapper(Zchema, Generic[T]):
+    success: bool = True
+    message: str = "Success"
+    data: Optional[T] = None
+    meta: Optional[dict[str, Any]] = None
+```
+
+---
+
+## Attributes
+
+<TypeTable
+  type={{
+    success: {
+      type: 'bool',
+      default: 'True',
+      description: 'Boolean flag indicating if the HTTP operation was successful.',
+    },
+    message: {
+      type: 'str',
+      default: '"Success"',
+      description: 'Diagnostic string describing the outcome of the request.',
+    },
+    data: {
+      type: 'Optional[T]',
+      default: 'None',
+      description: 'The typed payload content of the response.',
+    },
+    meta: {
+      type: 'Optional[dict[str, Any]]',
+      default: 'None',
+      description: 'Optional unstructured key-value metadata (e.g., pagination cursors, error diagnostics).',
+    }
+  }}
+/>
+
+---
+
+## Class Methods
+
+### `success_response`
+
+Convenience factory method constructing a successful `ResponseWrapper` container:
+
+```python
+@classmethod
+def success_response(
+    cls, 
+    data: T, 
+    message: str = "Success", 
+    meta: Optional[dict[str, Any]] = None
+) -> ResponseWrapper[T]: ...
+```
+
+<TypeTable
+  type={{
+    data: {
+      type: 'T',
+      description: 'The primary typed payload to wrap.',
+    },
+    message: {
+      type: 'str',
+      default: '"Success"',
+      description: 'Custom output diagnostic message detailing the outcome.',
+    },
+    meta: {
+      type: 'Optional[dict[str, Any]]',
+      default: 'None',
+      description: 'Unstructured metadata dictionary (e.g., execution metrics).',
+    },
+    returns: {
+      type: 'ResponseWrapper[T]',
+      description: 'A populated ResponseWrapper container instance.',
+    }
+  }}
+/>
+
+---
+
+## Usage Example
+
+```python
+from fastapi import APIRouter
+from zcore import ResponseWrapper
+
+router = APIRouter()
+
+@router.get("/metrics")
+async def get_metrics():
+    stats = {"cpu_usage": 12.5, "uptime": 3600}
+    return ResponseWrapper.success_response(
+        data=stats, 
+        message="Metrics resolved successfully"
+    )
+```
+
+<Callout type="info" emoji="💡">
+  **Automatic Router Integration:** When using `BaseRouter`, you do not need to wrap return values manually. The router automatically encloses service outputs inside `ResponseWrapper` and populates pagination cursor metadata directly into `meta`.
+</Callout>

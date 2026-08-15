@@ -1,0 +1,186 @@
+---
+title: ZTestClient & BaseZTest
+description: API reference for ZTestClient and BaseZTest providing zero-boilerplate async integration testing and transaction isolation.
+icon: TestTube
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`ZTestClient` is an asynchronous test orchestrator wrapping `httpx.AsyncClient`. It coordinates the entire ZCore runtime lifecycle (IoC container sandboxing, savepoint database rollbacks, and request context mocking) for seamless, zero-boilerplate integration testing.
+
+## Class Definition
+
+```python
+from typing import Any
+from fastapi import FastAPI
+from zcore.testing import ZTestClient
+
+class ZTestClient:
+    def __init__(
+        self,
+        app: FastAPI,
+        user_id: Any | None = None,
+        scopes: list[str] | None = None,
+        is_superuser: bool = False,
+        use_db: bool = True,
+        extra_context: dict[str, Any] | None = None,
+        extra_user_attrs: dict[str, Any] | None = None
+    ) -> None:
+        ...
+```
+
+---
+
+## Initialization Parameters
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The FastAPI application instance to mount and test.',
+    },
+    user_id: {
+      type: 'Any | None',
+      default: 'None',
+      description: 'Mock user ID for authentication. When provided, automatically configures UserContext and DependencyOverride fixtures.',
+    },
+    scopes: {
+      type: 'list[str] | None',
+      default: 'None',
+      description: 'Security permission scopes assigned to the mock user for authorization assertions.',
+    },
+    is_superuser: {
+      type: 'bool',
+      default: 'False',
+      description: 'Boolean flag indicating if the mock user has superuser privileges (bypassing scope checks).',
+    },
+    use_db: {
+      type: 'bool',
+      default: 'True',
+      description: 'If True, wraps the test execution in an isolated database transaction that rolls back on exit.',
+    },
+    extra_context: {
+      type: 'dict[str, Any] | None',
+      default: 'None',
+      description: 'Additional key-value pairs to inject directly into the request-scoped ZContext (e.g., {"restricted_fields": [...]}).',
+    },
+    extra_user_attrs: {
+      type: 'dict[str, Any] | None',
+      default: 'None',
+      description: 'Additional domain attributes to attach to the mock user instance (e.g., {"department": "HR"}).',
+    }
+  }}
+/>
+
+---
+
+## Context Manager Protocol
+
+`ZTestClient` implements the asynchronous context manager protocol (`__aenter__` and `__aexit__`), returning a fully configured `httpx.AsyncClient` bound to the application:
+
+```python
+import pytest
+import uuid
+from zcore.testing import ZTestClient
+from main import app
+
+@pytest.mark.asyncio
+async def test_create_task_endpoint():
+    user_id = uuid.uuid4()
+    
+    async with ZTestClient(
+        app=app, 
+        user_id=user_id, 
+        scopes=["tasks:create", "tasks:view"],
+        use_db=True
+    ) as client:
+        # Executes HTTP requests against the application transport
+        response = await client.post("/tasks/", json={"title": "Write Unit Tests"})
+        assert response.status_code == 201
+        
+    # Database changes are automatically rolled back and IoC sandboxes are restored here!
+```
+
+---
+
+## Class-Based Testing: `BaseZTest`
+
+An abstract base class for structuring declarative test suites sharing identical user attributes and application setups:
+
+```python
+from zcore.testing import BaseZTest
+
+class BaseZTest(ABC):
+    app: FastAPI = None
+    user_id: Any = None
+    is_active: bool = True
+    is_superuser: bool = False
+    scopes: list[str] = None
+    extra_user_attrs: dict[str, Any] = None
+    extra_context: dict[str, Any] = None
+```
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The root FastAPI application instance (required).',
+    },
+    user_id: {
+      type: 'Any',
+      default: 'uuid.uuid4()',
+      description: 'Mock user ID used across tests in the suite.',
+    },
+    is_active: {
+      type: 'bool',
+      default: 'True',
+      description: 'User active state status.',
+    },
+    is_superuser: {
+      type: 'bool',
+      default: 'False',
+      description: 'Superuser permission bypass flag.',
+    },
+    scopes: {
+      type: 'list[str] | None',
+      default: 'None',
+      description: 'List of permission scopes assigned to the suite user.',
+    },
+    extra_user_attrs: {
+      type: 'dict[str, Any] | None',
+      default: 'None',
+      description: 'Custom domain attributes attached to the mock user.',
+    },
+    extra_context: {
+      type: 'dict[str, Any] | None',
+      default: 'None',
+      description: 'Context parameters injected into ZContext.',
+    }
+  }}
+/>
+
+### `run` Method
+
+An asynchronous context manager method on `BaseZTest` that instantiates `ZTestClient` using the class-level attributes and yields the `httpx.AsyncClient`:
+
+```python
+import pytest
+from zcore.testing import BaseZTest
+from main import app
+
+class TestTaskSuite(BaseZTest):
+    app = app
+    scopes = ["tasks:view", "tasks:create"]
+
+    @pytest.mark.asyncio
+    async def test_get_tasks_list(self):
+        async with self.run() as client:
+            res = await client.get("/tasks/")
+            assert res.status_code == 200
+```
+
+<Callout type="info" emoji="🧪">
+  **Orchestrated Internal Fixtures:**
+  `ZTestClient` automatically coordinates `ContainerSandbox` (IoC isolation), `AppLifespan` (plugin startup/shutdown lifespans), `DatabaseRollback` (savepoint transactions), `UserContext` (`ContextVar` store injection), and `DependencyOverride` (`get_current_user_stub` override) on every test run.
+</Callout>

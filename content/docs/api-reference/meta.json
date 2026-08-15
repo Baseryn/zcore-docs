@@ -1,4 +1,26 @@
 {
   "pages": [
+    "repository",
+    "search",
+    "service",
+    "uow",
+    "base-router",
+    "api-router",
+    "zchema",
+    "response-wrapper",
+    "ioc-container",
+    "inject",
+    "security",
+    "base-auth",
+    "base-cache",
+    "stream-manager",
+    "local-storage-provider",
+    "storage-validators",
+    "zcontext",
+    "settings",
+    "kernel",
+    "plugin",
+    "ztest-client",
+    "testing-fixtures"
   ]
 }

@@ -1,0 +1,196 @@
+---
+title: IoC Container & Dependency Injection
+description: API reference for ZCore's Inversion of Control container, lifecycle registration methods, and Inject type marker.
+icon: Boxes
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `IoCContainer` manages class instantiation and lifecycles across your application. It handles registration, constructor auto-wiring via cached reflection signatures, and circular dependency detection across **Singleton**, **Scoped**, and **Transient** lifecycles.
+
+## Class Definition
+
+```python
+from zcore.kernel.di import IoCContainer
+
+class IoCContainer:
+    def __init__(self) -> None:
+        ...
+```
+
+---
+
+## Global Instance
+
+ZCore exposes a pre-initialized global container instance used throughout the framework:
+
+```python
+from zcore import container
+# or: from zcore.kernel.di import container
+```
+
+---
+
+## Registration Methods
+
+### `register_singleton`
+
+Registers a pre-constructed instance as a shared global singleton.
+
+```python
+def register_singleton(self, interface: Type[Any], instance: Any) -> None: ...
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'Type[Any]',
+      description: 'The interface or class type key to map against.',
+    },
+    instance: {
+      type: 'Any',
+      description: 'The pre-constructed object instance to share across the entire application.',
+    }
+  }}
+/>
+
+### `register_scoped`
+
+Registers a class bound to a request-scoped lifecycle. The class is instantiated once per context scope (`scope_id`) and cached across the dependency graph for the duration of that request.
+
+```python
+def register_scoped(self, interface: Type[Any], implementation: Type[Any]) -> None: ...
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'Type[Any]',
+      description: 'The interface or class type key to map against.',
+    },
+    implementation: {
+      type: 'Type[Any]',
+      description: 'The target implementation class to auto-wire per request scope.',
+    }
+  }}
+/>
+
+### `register_scoped_instance`
+
+Registers a pre-constructed instance directly into the active request scope store.
+
+```python
+def register_scoped_instance(self, interface: Type[Any], instance: Any) -> None: ...
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'Type[Any]',
+      description: 'The interface or class type key to map against.',
+    },
+    instance: {
+      type: 'Any',
+      description: 'The active object instance to bind to the active request scope.',
+    }
+  }}
+/>
+
+<Callout type="warn" emoji="⚠️">
+  Raises `DIException` if invoked outside of an active request scope boundary.
+</Callout>
+
+### `register_transient`
+
+Registers a class bound to a transient lifecycle. A fresh instance is constructed on every resolution call.
+
+```python
+def register_transient(self, interface: Type[Any], implementation: Type[Any]) -> None: ...
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'Type[Any]',
+      description: 'The interface or class type key to map against.',
+    },
+    implementation: {
+      type: 'Type[Any]',
+      description: 'The target implementation class to instantiate fresh on demand.',
+    }
+  }}
+/>
+
+---
+
+## Resolution & Scope Management
+
+### `resolve`
+
+Dynamically evaluates registered bindings (Singleton, Scoped, Transient) or executes constructor auto-wiring to assemble the dependency tree.
+
+```python
+def resolve(
+    self, 
+    interface: Type[T], 
+    _stack: Optional[Set[Type[Any]]] = None
+) -> T: ...
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'Type[T]',
+      description: 'The interface or class type to resolve.',
+    },
+    returns: {
+      type: 'T',
+      description: 'The fully constructed and resolved instance of type T.',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="⚡">
+  **Constructor Reflection & Signature Caching:** If a type is not explicitly registered, `resolve` analyzes its `__init__` constructor parameters. Evaluated dependencies are cached in `_dependency_signature_cache` to eliminate reflection overhead on subsequent resolutions.
+</Callout>
+
+### `clear_scope`
+
+Explicit scope cleanup hook called during middleware teardown to purge request-scoped instances.
+
+```python
+def clear_scope(self, scope_id: str) -> None: ...
+```
+
+---
+
+## FastAPI Integration Helpers
+
+### `Inject[T]`
+
+Dynamic type marker bridging FastAPI route parameters with the IoC container via `Annotated`:
+
+```python
+from zcore import Inject
+
+@router.get("/dashboard")
+async def get_dashboard(service: Inject[DashboardService]):
+    return await service.get_data()
+```
+
+### `Injector`
+
+Callable wrapper class converting a type interface lookup into a FastAPI `Depends` resolver.
+
+---
+
+## Exceptions
+
+### `CircularDependencyError`
+
+Raised when a cyclic resolution loop is detected during dependency auto-wiring (e.g., `ServiceA -> ServiceB -> ServiceA`). Inherits from `DIException`.
+
+### `DIException`
+
+Base exception class for all container-level dependency injection runtime errors.

@@ -1,0 +1,142 @@
+---
+title: Storage Validators
+description: API reference for file upload security validators including Magic Byte inspection, DoS size limits, and extension whitelisting.
+icon: File
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+This module provides validation controls to protect server integrity during file uploads. It includes file extension checks, file size limit enforcement to defend against Denial of Service (DoS) attacks, and MIME-type verification using binary Magic Bytes.
+
+## Base Class
+
+### `BaseStorageValidator`
+
+Base interface protocol defining standard storage validators. All custom validators must inherit from this class and implement `__call__`.
+
+```python
+from fastapi import UploadFile
+from zcore.storage import BaseStorageValidator
+
+class BaseStorageValidator:
+    def __call__(self, file: UploadFile) -> None:
+        raise NotImplementedError
+```
+
+<Callout type="info" emoji="⚙️">
+  Validators are callables. When invoked, they inspect the `UploadFile` instance and raise a `ValidationError` with descriptive metadata if validation fails.
+</Callout>
+
+---
+
+## Built-in Security Validators
+
+### `FileExtensionValidator`
+
+Enforces extension whitelist checks on incoming file names.
+
+```python
+from zcore.storage import FileExtensionValidator
+
+validator = FileExtensionValidator(
+    allowed_extensions=[".png", ".jpg", ".pdf"],
+    message="Custom invalid extension message"
+)
+```
+
+<TypeTable
+  type={{
+    allowed_extensions: {
+      type: 'Union[List[str], Set[str]]',
+      description: 'List or set of allowed extension strings (e.g., [".png", "jpg"]). Extensions are normalized automatically.',
+    },
+    message: {
+      type: 'Optional[str]',
+      default: 'None',
+      description: 'Custom validation diagnostic error message dispatched on failures.',
+    }
+  }}
+/>
+
+### `MaxFileSizeValidator`
+
+Enforces file size thresholds to prevent Denial of Service (DoS) and disk space exhaustion.
+
+```python
+from zcore.storage import MaxFileSizeValidator
+
+validator = MaxFileSizeValidator(
+    max_size_mb=10.0,
+    message="File size exceeds limit"
+)
+```
+
+<TypeTable
+  type={{
+    max_size_mb: {
+      type: 'float',
+      description: 'Maximum allowable file size threshold specified in Megabytes (MB).',
+    },
+    message: {
+      type: 'Optional[str]',
+      default: 'None',
+      description: 'Custom validation diagnostic message dispatched on failures.',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="💡">
+  **Chunked Stream Support:** If the Starlette `file.size` attribute is unavailable, `MaxFileSizeValidator` safely seeks to the end of the byte stream (`file.file.seek(0, 2)`), measures the stream position (`tell()`), and rewinds to the beginning (`seek(0)`) without buffering payloads into RAM.
+</Callout>
+
+### `SafeMimeTypeValidator`
+
+MIME-type validator utilizing binary **Magic Byte verification**. Reads the first 2048 header bytes of the file to verify that the file's raw binary signature matches its declared format.
+
+```python
+from zcore.storage import SafeMimeTypeValidator
+
+validator = SafeMimeTypeValidator(
+    allowed_mimes=["image/png", "image/jpeg", "application/pdf"]
+)
+```
+
+<TypeTable
+  type={{
+    allowed_mimes: {
+      type: 'Union[List[str], Set[str]]',
+      description: 'Set or list of approved MIME strings (e.g., ["image/png", "image/jpeg"]).',
+    },
+    message: {
+      type: 'Optional[str]',
+      default: 'None',
+      description: 'Custom validation diagnostic message dispatched on failures.',
+    }
+  }}
+/>
+
+<Callout type="warn" emoji="🚨">
+  **Executable Injection Firewall:**
+  Before validating formats, `SafeMimeTypeValidator` inspects header bytes for high-risk script patterns:
+  * **PHP Blocks:** `<?php`
+  * **HTML/JS Injections:** `<script`
+  * **Windows Binaries:** `MZ` PE header
+  * **Unix Scripts:** `#!/`
+
+  Any file containing these execution signatures is immediately rejected with a critical security alert, regardless of its extension.
+</Callout>
+
+---
+
+## Default Supported Binary Signatures (`SIGNATURES`)
+
+`SafeMimeTypeValidator` validates against the following built-in magic byte headers:
+
+| Format | Magic Byte Signature | MIME Type |
+|---|---|---|
+| **PNG** | `b"\x89PNG\r\n\x1a\n"` | `image/png` |
+| **JPEG** | `b"\xff\xd8\xff"` | `image/jpeg` |
+| **GIF** | `b"GIF87a"` / `b"GIF89a"` | `image/gif` |
+| **PDF** | `b"%PDF"` | `application/pdf` |
+| **WebP** | `b"RIFF"` | `image/webp` |
