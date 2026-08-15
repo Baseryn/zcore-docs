@@ -1,0 +1,93 @@
+---
+title: How to mock authenticated users in tests
+description: Simulate different user roles, scopes, superusers, and context restrictions without JWT overhead.
+icon: UserCog
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+When writing integration tests, generating, signing, and refreshing JWT tokens introduces unnecessary test complexity. `ZTestClient` lets you mock user identities, scopes, and context attributes directly.
+
+<Steps>
+  <Step>
+    ### 1. Mocking Scopes & Permissions
+
+    Pass `user_id` and the desired `scopes` list to simulate role-based authorization:
+
+    ```python
+    # test_permissions.py
+    import pytest
+    import uuid
+    from zcore.testing import ZTestClient
+    from main import app
+
+    @pytest.mark.asyncio
+    async def test_user_with_view_scope_only():
+        user_id = uuid.uuid4()
+        
+        async with ZTestClient(
+            app=app,
+            user_id=user_id,
+            scopes=["tasks:view"] # User only has read permissions
+        ) as client:
+            # 1. Allowed: GET /tasks
+            get_res = await client.get("/tasks")
+            assert get_res.status_code == 200
+
+            # 2. Forbidden: DELETE /tasks/{id} (Requires 'tasks:delete' scope)
+            del_res = await client.delete(f"/tasks/{uuid.uuid4()}")
+            assert del_res.status_code == 403
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Testing Superuser Privileges
+
+    Set `is_superuser=True` to test permission bypass mechanisms:
+
+    ```python
+    @pytest.mark.asyncio
+    async def test_superuser_bypasses_all_scopes():
+        async with ZTestClient(
+            app=app,
+            user_id=uuid.uuid4(),
+            scopes=[],            # Zero scopes provided
+            is_superuser=True     # Superuser flag bypasses checks
+        ) as client:
+            res = await client.delete(f"/tasks/{uuid.uuid4()}")
+            assert res.status_code in [200, 404]  # Did not get blocked by 403 Forbidden
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Custom Attributes and Context Restrictions
+
+    Use `extra_user_attrs` to attach domain-specific fields to the mock user, and `extra_context` to test `Zchema` field-masking:
+
+    ```python
+    @pytest.mark.asyncio
+    async def test_masked_fields_for_restricted_user():
+        async with ZTestClient(
+            app=app,
+            user_id=uuid.uuid4(),
+            scopes=["tasks:view"],
+            extra_user_attrs={"organization_id": uuid.uuid4(), "department": "Finance"},
+            extra_context={"restricted_fields": ["tasks.view.salary"]}
+        ) as client:
+            res = await client.get("/tasks")
+            assert res.status_code == 200
+            
+            # Assert that Zchema masked the salary field
+            for task in res.json()["data"]:
+                assert "salary" not in task
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🎭">
+  **Dual Context & Dependency Injection:**
+  When `user_id` is supplied, `ZTestClient` simultaneously:
+  1. Overrides `get_current_user_stub` with a `GenericMockUser` implementing `UserProtocol`.
+  2. Binds `user_id`, `scopes`, and `extra_context` to the request-scoped `ZContext` (`ctx`).
+</Callout>
