@@ -1,6 +1,7 @@
 {
   "pages": [
     "extend-settings",
-    "use-cli-commands"
+    "use-cli-commands",
+    "wire-dependencies"
   ]
 }

@@ -1,0 +1,73 @@
+---
+title: How to wire dependencies with Inject[T]
+description: Connect services, repositories, and external clients automatically using IoC and Annotated injection.
+icon: Cable
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore eliminates verbose `Depends(...)` chains. It provides automatic constructor auto-wiring for classes, and the dynamic `Inject[T]` marker for FastAPI route handlers.
+
+<Steps>
+  <Step>
+    ### Register External Clients (Singleton or Transient)
+
+    If you have external clients (e.g., an `EmailClient` or third-party SDK), register them in ZCore's IoC container during startup:
+
+    ```python
+    # main.py or plugins
+    from zcore.kernel.di import container
+
+    class EmailClient:
+        def send_email(self, to: str, message: str) -> None:
+            print(f"Sending email to {to}: {message}")
+
+    # Register as a shared singleton
+    container.register_singleton(EmailClient, EmailClient())
+    ```
+  </Step>
+
+  <Step>
+    ### Constructor Auto-Wiring (Service-to-Service)
+
+    Inside your classes and services, you **do not** need any decorators or helpers. Simply declare your dependencies in the `__init__` method using standard Python type hints:
+
+    ```python
+    # services.py
+    from .clients import EmailClient
+
+    class NotificationService:
+        # ZCore automatically inspects type hints and injects EmailClient
+        def __init__(self, email_client: EmailClient):
+            self.email_client = email_client
+
+        async def notify(self, user_email: str) -> None:
+            self.email_client.send_email(user_email, "Welcome to ZCore!")
+    ```
+  </Step>
+
+  <Step>
+    ### Use `Inject[T]` in FastAPI Routes
+
+    To inject any container-managed dependency into a FastAPI route, annotate the parameter with `Inject[T]`:
+
+    ```python
+    # routers.py
+    from fastapi import APIRouter
+    from zcore import Inject
+    from .services import NotificationService
+
+    router = APIRouter()
+
+    @router.post("/notify")
+    async def send_notification(service: Inject[NotificationService]):
+        await service.notify("user@example.com")
+        return {"status": "sent"}
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="💡">
+  **How `Inject[T]` Works:** Under the hood, `Inject[NotificationService]` resolves to `Annotated[NotificationService, Depends(Injector(NotificationService))]`. It seamlessly bridges FastAPI's dependency injection with ZCore's IoC container lifecycle.
+</Callout>
