@@ -12,9 +12,7 @@ export const metadata: Metadata = {
     default: 'ZCore Documentation',
     template: '%s | ZCore Documentation',
   },
-  description:
-    'Official documentation for ZCore',
-
+  description: 'Official documentation for ZCore',
   icons: {
     icon: 'https://raw.githubusercontent.com/Baseryn/zcore-docs/master/public/favico.png',
   },
@@ -24,7 +22,15 @@ export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
-        <RootProvider>{children}</RootProvider>
+        <RootProvider
+          search={{
+            options: {
+              api: '/zcore-docs/api/search',
+            },
+          }}
+        >
+          {children}
+        </RootProvider>
       </body>
     </html>
   );
