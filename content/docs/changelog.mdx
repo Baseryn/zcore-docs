@@ -20,8 +20,136 @@ This page documents all notable architectural evolutions, breaking changes, secu
 
 ---
 
-<Accordions type="multiple" defaultValue={['v0.1.0-beta.6']}>
-  <Accordion id="v0.1.0-beta.6" title="v0.1.0-beta.6 (Latest Pre-release) — July 16, 2026 🚀">
+<Accordions type="multiple" defaultValue={['v0.1.0-beta.7']}>
+  <Accordion id="v0.1.0-beta.7" title="v0.1.0-beta.7 (Latest Pre-release) — August 16, 2026 🚀">
+    Welcome to **v0.1.0-beta.7** of the ZCore Framework! 🚀
+
+    This is one of the most substantial and transformative releases in ZCore's history. Guided by our foundational philosophy of **Engineered Simplicity (KISS)** and **Clean Architecture**, `v0.1.0-beta.7` eliminates generic boilerplate across data layers, introduces a complete asynchronous testing framework with transaction rollback guarantees, unifies request-scoped context state and security primitives, and introduces event-driven subscriber mechanics.
+
+    ### 🚀 Core Features & Architectural Advancements
+
+    #### 1. 🧪 Comprehensive Async Testing Infrastructure (`zcore.testing`)
+    Writing integration and unit tests for database-backed FastAPI services is now effortless and boilerplate-free:
+    * **`ZTestFixture` Engine:** Modular async fixtures including `ContainerSandbox` (snapshots and restores IoC state), `DatabaseRollback` (wraps tests in isolated savepoint transactions), `UserContext` (injects user identities and security scopes), and `AppLifespan` (manages FastAPI lifecycle hooks).
+    * **`ZTestClient`:** An asynchronous test client extending `httpx.AsyncClient` that coordinates test sandboxes with zero manual mock setups.
+    * **`BaseZTest`:** An abstract class providing clean, class-based test suites using an intuitive `async with self.run(use_db=True)` context manager.
+    * **CLI Test Generator:** Run `zc startapp <domain> --test` to scaffold ready-to-run test files automatically.
+
+    #### 2. 🌐 Centralized Request Context & Scopes (`ZContext` & `ctx`)
+    Replaced fragmented context functions with a unified, high-performance, contextvar-isolated `ZContext` class:
+    * **Global `ctx` Singleton:** Access context variables anywhere in the request lifecycle via strongly-typed properties (`ctx.user_id`, `ctx.restricted_fields`, `ctx.action`).
+    * **`ctx.scope()` Context Manager:** Create isolated, temporary context overrides for background tasks, cron jobs, or test sandboxing.
+    * **Action-Aware Routing:** Route operations (`create`, `view`, `update`, `delete`) are automatically detected and injected into `ZContext`, driving action-scoped field pruning in `Zchema`.
+
+    #### 3. 🧹 Streamlined Data Layer Generics & Dynamic Hook Propagation
+    We eliminated the verbose schema generic clutter from data access layers:
+    * **Single Generic Parameter:** `BaseRepository[Model]` and `BaseService[Model]` now only require the database model type.
+    * **Dynamic Criterion & Query Filters:** Repository `get()`, `exist()`, and `get_list()` now accept arbitrary positional SQLAlchemy binary expressions (`*criterion`) and keyword arguments (`**filters`) consolidated via `_apply_filters`.
+    * **Dynamic Pre-Hook Data Injection:** Service `pre_create` and `pre_update` lifecycle hooks can now return a dictionary (`Optional[dict[str, Any]]`) that automatically merges context-derived data (e.g., `user_id` from `ctx`) directly into repository database flushes.
+
+    #### 4. 🔐 Consolidated Security & Generic Authentication (`BaseAuth`)
+    * **Unified `Security` Class:** Merged scattered hashing and JWT logic into a centralized `Security` coordinator supporting Argon2id password hashing, PyJWT token encoding/decoding, and cryptographic token generation.
+    * **Template Method `BaseAuth`:** A generic authentication dependency that extracts and validates tokens, integrates with `BaseCache` for user-lookup caching, and automatically binds the resolved user to `ZContext`.
+    * **Dynamic Scope Resolution:** `HasScopes` permission dependencies now evaluate scopes dynamically from `ZContext` (`ctx.get("scopes")`) with automatic type coercion for lists, tuples, and sets.
+
+    #### 5. ⚡ Modern Constructor Auto-Wiring (`Inject[T]`)
+    * Converted `Inject` into a subscriptable type marker (`Inject[T]`), which seamlessly maps to `Annotated[T, Depends(Injector(T))]`.
+    * Allows clean, idiomatic constructor type-hinting in services and routes without importing or declaring raw FastAPI `Depends()` chains.
+
+    #### 6. 📡 Event-Driven Architecture (`@on_event`) & SQL Diagnostics
+    * **`@on_event` Decorator:** Mark service methods as event subscribers with automatic container-backed resolution via `EventDispatcher.register_listeners()`.
+    * **SQL Execution Telemetry:** Built-in connection interceptors log SQL execution durations in milliseconds and filter out Postgres system catalog query noise.
+    * **Static Route Protection:** Added `_sort_routes()` to ensure parameterized paths (e.g., `/{id:uuid}`) never shadow sibling static endpoints like `/search`.
+
+    ---
+
+    ### 🛠️ CLI & Subsystem Enhancements
+
+    * **`zc genenv`:** Introspects registered Pydantic `Settings` classes and scaffolds a clean `.env.example` file automatically.
+    * **`Settings` Simplification:** Renamed `ZCoreCoreSettings` to `Settings` and replaced `ENVIRONMENT` strings with boolean `DEBUG` flags.
+    * **`ZCoreJSONResponse`:** Replaces standard JSON responses to safely serialize complex types (UUIDs, ISO datetimes, Decimals).
+    * **Standalone Documentation Portal:** Decoupled documentation from the core repository into the official standalone repository [Baseryn/zcore-docs](https://baseryn.github.io/zcore-docs/).
+
+    ---
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. Generics Simplification', '2. Settings & Debug', '3. Inject[T] Syntax', '4. Security Coordinator']}>
+      <Tab value="1. Generics Simplification">
+        You no longer need to pass schema types to `BaseRepository` or `BaseService`.
+
+        ```python
+        # Before (v0.1.0-beta.6)
+        class TaskRepo(BaseRepository[Task, TaskCreate, TaskUpdate]):
+            ...
+
+        class TaskService(BaseService[Task, TaskCreate, TaskUpdate]):
+            ...
+
+        # After (v0.1.0-beta.7)
+        class TaskRepo(BaseRepository[Task]):
+            ...
+
+        class TaskService(BaseService[Task]):
+            ...
+        ```
+      </Tab>
+
+      <Tab value="2. Settings & Debug">
+        The settings class name has been simplified to `Settings`, and `ENVIRONMENT` is replaced by the boolean `DEBUG` flag.
+
+        ```python
+        # Before (v0.1.0-beta.6)
+        from zcore import ZCoreCoreSettings
+
+        class AppSettings(ZCoreCoreSettings):
+            ENVIRONMENT: str = "development"
+
+        # After (v0.1.0-beta.7)
+        from zcore import Settings
+
+        class AppSettings(Settings):
+            DEBUG: bool = True
+        ```
+      </Tab>
+
+      <Tab value="3. Inject[T] Syntax">
+        Update route handlers and constructors to use `Inject[T]` type annotations instead of default values.
+
+        ```python
+        # Before (v0.1.0-beta.6)
+        @router.post("/tasks")
+        async def create_task(service: TaskService = Inject(TaskService)):
+            ...
+
+        # After (v0.1.0-beta.7)
+        from zcore import Inject
+
+        @router.post("/tasks")
+        async def create_task(service: Inject[TaskService]):
+            ...
+        ```
+      </Tab>
+
+      <Tab value="4. Security Coordinator">
+        Scattered imports from `zcore.security.hashing` and `zcore.security.jwt` are merged under `Security`.
+
+        ```python
+        # Before (v0.1.0-beta.6)
+        from zcore.security.hashing import hash_password, verify_password
+        from zcore.security.jwt import create_access_token
+
+        # After (v0.1.0-beta.7)
+        from zcore import Security
+
+        hashed = Security.hash_password(raw_password)
+        token = Security.create_jwt({"sub": str(user_id)})
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+
+  <Accordion id="v0.1.0-beta.6" title="v0.1.0-beta.6 — July 16, 2026 🚀">
     Welcome to **v0.1.0-beta.6** of the ZCore Framework! 🚀
 
     This release represents a significant step forward in robust data handling, security validation, and comprehensive project governance. Following our core philosophy of **Engineered Simplicity (KISS)**, we addressed critical edge-cases in timezone serialization, refined schema semantics to align with Domain-Driven Design (DDD), and overhauled repository testing pipelines.
