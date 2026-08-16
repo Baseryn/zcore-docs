@@ -189,21 +189,3 @@ A balanced architecture means acknowledging that every abstraction carries a cos
 | **`UnitOfWork`** | Introduces context manager encapsulation for database sessions. | Your API writes only to single tables within single requests. |
 | **`BaseRouter`** | Generates 7 standard endpoints which must be configured or excluded. | You only need 1 or 2 specific endpoints for a given model. |
 | **`Inject[T]`** | Requires understanding container lifecycles (Singleton, Scoped, Transient). | Standard FastAPI `Depends()` parameters meet your modular requirements. |
-
----
-
-## Next Steps
-
-Explore how to implement these components in your codebase:
-
-<Cards>
-  <Card title="BaseRepository" href="/docs/repository">
-    Learn how to leverage keyset pagination and the SearchEngine.
-  </Card>
-  <Card title="Zchema" href="/docs/zchema">
-    Understand how to map scopes to achieve dynamic field-level serialization.
-  </Card>
-  <Card title="UnitOfWork" href="/docs/uow">
-    See how to combine atomic database sessions with deferred domain events.
-  </Card>
-</Cards>

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     'Official documentation for ZCore',
 
   icons: {
-    icon: '/favico.png',
+    icon: 'https://raw.githubusercontent.com/Baseryn/zcore-docs/master/public/favico.png',
   },
 };
 

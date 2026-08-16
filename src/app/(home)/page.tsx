@@ -80,8 +80,8 @@ const tools = [
     name: 'Inject[T]',
     oneLine: 'Type-safe constructor dependency injection mapped directly to FastAPI Depends.',
     code: `class TaskService:
-    def __init__(self, r: Repo = Inject[Repo]):
-        self.r = r`,
+    def __init__(self, repo: Inject[Repo]):
+        self.repo = repo`,
     without: 'FastAPI Depends(get_task_repo) chains',
   },
   {
@@ -215,7 +215,7 @@ async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db)):
         super().__init__(model=Task, db=db)
 
 @router.post("/tasks")
-async def create_task(data: TaskCreate, repo: TaskRepo = Inject[TaskRepo]):
+async def create_task(data: TaskCreate, repo: Inject[TaskRepo]):
     return await repo.create(data)`,
     note: 'One empty class. You now have async CRUD, search, and pagination.',
   },
@@ -223,7 +223,7 @@ async def create_task(data: TaskCreate, repo: TaskRepo = Inject[TaskRepo]):
     step: 2,
     title: 'Now add BaseService (Optional)',
     code: `class TaskService(BaseService[Task]):
-    def __init__(self, repo: TaskRepo = Inject[TaskRepo]):
+    def __init__(self, repo: Inject[TaskRepo]):
         super().__init__(model=Task, repository=repo)
 
     async def pre_create(self, schema: TaskCreate):
@@ -254,7 +254,7 @@ export default function HomePage() {
 
           <div className="mb-10 w-full max-w-md md:max-w-lg select-none pointer-events-none filter drop-shadow-lg transition-transform duration-300 hover:scale-[1.01]">
             <img 
-              src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/release/v0.1.0-beta.7/docs/assets/banner.png"
+              src="https://raw.githubusercontent.com/Baseryn/zcore-docs/master/public/banner.png"
               alt="FastAPI ZCore Framework Logo" 
               className="w-full h-auto object-contain dark:brightness-110 dark:contrast-105"
             />
@@ -286,7 +286,7 @@ export default function HomePage() {
               Quick Start <ChevronRight />
             </Link>
             <a
-              href="https://github.com/fastapi-zcore-framework/zcore"
+              href="https://github.com/baseryn/zcore"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:bg-zinc-900 dark:hover:border-zinc-700 dark:text-zinc-300 transition px-6 py-3 text-sm font-semibold"
@@ -770,7 +770,7 @@ export default function HomePage() {
               Read the Docs
             </Link>
             <a
-              href="https://github.com/fastapi-zcore-framework/zcore"
+              href="https://github.com/baseryn/zcore"
               target="_blank"
               rel="noopener noreferrer"
               className="px-6 py-2.5 rounded-lg border border-zinc-200 bg-white/40 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:bg-zinc-900/80 text-zinc-600 dark:text-zinc-400 text-sm font-semibold transition"
