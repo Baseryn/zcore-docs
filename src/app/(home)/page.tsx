@@ -254,7 +254,7 @@ export default function HomePage() {
 
           <div className="mb-10 w-full max-w-md md:max-w-lg select-none pointer-events-none filter drop-shadow-lg transition-transform duration-300 hover:scale-[1.01]">
             <img 
-              src="/banner.png"
+              src="https://raw.githubusercontent.com/Baseryn/zcore-docs/master/public/banner.png"
               alt="FastAPI ZCore Framework Logo" 
               className="w-full h-auto object-contain dark:brightness-110 dark:contrast-105"
             />

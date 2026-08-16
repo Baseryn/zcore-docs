@@ -9,7 +9,7 @@ export function baseOptions(): BaseLayoutProps {
       title: (
           <div className="flex items-center gap-2 select-none">
             <Image
-              src="/favico.png"
+              src="https://raw.githubusercontent.com/Baseryn/zcore-docs/master/public/favico.png"
               alt="ZCore Logo"
               width={24}
               height={24}
