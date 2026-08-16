@@ -1,0 +1,90 @@
+---
+title: File Storage Security Architecture
+description: Deep dive into how ZCore prevents path traversal, DoS through large files, arbitrary file deletions, and executable MIME spoofing.
+icon: FileLock
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+File upload endpoints are among the highest-risk attack vectors in web applications. ZCore's **`LocalStorageProvider`** and storage validator suite implement deep defense-in-depth mechanisms to protect host servers against remote code execution (RCE), directory traversal, and resource exhaustion attacks.
+
+---
+
+## 1. Path Traversal & Arbitrary File Deletion Defense
+
+Attackers frequently craft malicious filenames or folder parameters (e.g., `../../etc/shadow` or `..\..\Windows\System32`) to escape the upload root directory.
+
+ZCore mitigates this using multi-stage path sanitization:
+
+1. **Path Normalization:** Uses `PureWindowsPath(related_type).as_posix()` to normalize cross-platform path separators.
+2. **Boundary Assertion:** Resolves system symlinks and relative path operators (`..`) and strictly verifies that the resulting folder resides within the root upload path:
+
+```python
+# Internal security validation in local.py
+base = await Path(self.base_path).resolve(strict=False)
+target_folder = await (Path(self.base_path) / normalized_type).resolve(strict=False)
+
+if not target_folder.is_relative_to(base):
+    raise AppException("Path traversal attempt detected")
+```
+
+<Callout type="warn" emoji="🛡️">
+  **Arbitrary Deletion Protection:**
+  This same `.is_relative_to(base)` verification executes inside `storage.delete(file_path)`. An attacker cannot exploit delete endpoints to remove arbitrary system configuration files.
+</Callout>
+
+---
+
+## 2. Magic Byte Verification & Script Firewall
+
+Relying purely on file extensions (`.png`, `.pdf`) or client-provided `Content-Type` headers is completely insecure, as attackers can disguise PHP web shells or executable binaries as images.
+
+ZCore's **`SafeMimeTypeValidator`** reads the first 2048 header bytes to evaluate actual file signatures:
+
+<Mermaid chart="graph TB
+    File[Uploaded Binary Stream] --> Read[Read First 2048 Header Bytes]
+    Read --> ScriptCheck{Contains <?php, <script, MZ, or #!?}
+    ScriptCheck -- Yes --> Critical[Raise ValidationError: Security Violation]
+    ScriptCheck -- No --> Magic[Compare against SIGNATURES Dictionary]
+    Magic -- Match Found --> Allowed{Is MIME in allowed_mimes?}
+    Allowed -- Yes --> Save[Allow Upload to Disk]
+    Allowed -- No --> Reject[Raise ValidationError: MIME Not Allowed]"/>
+
+### Executable Injection Firewall
+Even before checking legitimate magic bytes, `SafeMimeTypeValidator` inspects the header for malicious execution signatures:
+* **PHP Script Blocks:** `<?php`
+* **HTML/JavaScript Injections:** `<script`
+* **Windows Portable Executables (PE):** `MZ` header
+* **Unix Shebang Scripts:** `#!/`
+
+If any of these signatures are present, ZCore immediately logs a critical security alert and rejects the request.
+
+---
+
+## 3. Denial of Service (DoS) & Memory Exhaustion Mitigation
+
+Uploading multi-gigabyte files can saturate disk space and crash server memory. **`MaxFileSizeValidator`** calculates byte capacities safely without buffering entire payloads into RAM:
+
+1. **Native Inspection:** Checks Starlette's `file.size` attribute if available.
+2. **Safe Stream Seeking:** For chunked multipart streams, it seeks to the end of the byte stream (`file.file.seek(0, 2)`), measures the stream position (`file.file.tell()`), and immediately rewinds to the beginning (`file.file.seek(0)`).
+3. If the computed size exceeds `max_size_bytes`, the upload is rejected before asynchronous disk writes begin.
+
+---
+
+## 4. Collision-Resistant Randomized Filenames
+
+To prevent attackers from overwriting existing files or guessing storage locations, `LocalStorageProvider` ignores original client filenames when storing on disk.
+
+It generates an isolated, 15-character UUID prefix paired with the normalized extension:
+
+```python
+# Generates secure filename: "3f9a8b1c4e2d7a9.png"
+uuid_file_name = str(uuid.uuid4())[:15]
+ext = Path(filename).suffix.lower()
+new_file_name = f"{uuid_file_name}{ext}"
+```
+
+<Callout type="info" emoji="⚡">
+  **Asynchronous Disk Streaming:**
+  Once validated, files are written asynchronously using `aiofiles` in 1 MB chunks, keeping the event loop responsive during concurrent uploads.
+</Callout>

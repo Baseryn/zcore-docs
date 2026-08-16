@@ -1,0 +1,84 @@
+---
+title: Step 2 - Database Engine Setup
+description: Configure the asynchronous SQLAlchemy engine and understand how ZCore handles connection pooling and query logging.
+icon: Database
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore does not hide SQLAlchemy; it orchestrates it. In this step, we will initialize the `DatabaseManager` and understand how ZCore handles asynchronous connection pooling and structured query logging.
+
+<Steps>
+  <Step>
+    ### Configure the Database URL
+
+    Open your `.env` file. By default, ZCore uses an asynchronous SQLite database for local development.
+
+    ```dotenv
+    # .env
+    DATABASE_URL=sqlite+aiosqlite:///task_manager.db
+    ```
+    
+    <Callout type="info" emoji="💡">
+      For production, you would switch this to PostgreSQL (e.g., `postgresql+asyncpg://user:pass@host:port/db`). ZCore's `DatabaseManager` automatically adjusts connection pooling based on the database dialect.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Initialize the Engine in `main.py`
+
+    Open `main.py`. The CLI generated the initialization code for you, but let's understand what it does.
+
+    ```python
+    # main.py
+    from zcore import Kernel, settings
+    from zcore.db import db_manager
+
+    # Initialize Database Manager
+    db_manager.init_app(
+        db_url=settings.DATABASE_URL,
+        pool_size=settings.POOL_SIZE,       # Default: 5
+        max_overflow=settings.MAX_OVERFLOW,  # Default: 10
+        echo=(settings.DEBUG)               # Default: True
+    )
+    ```
+
+    *   `pool_size`: The number of connections to keep open in the pool.
+    *   `max_overflow`: How many connections to allow beyond `pool_size` under heavy load.
+    *   `echo`: ZCore replaces standard SQLAlchemy echo with a structured query logger.
+  </Step>
+
+  <Step>
+    ### The Query Timing Logger
+
+    <Callout type="info" emoji="⚙️">
+      **Under the hood:** ZCore attaches event listeners to the SQLAlchemy engine. Every time a query is executed, ZCore calculates the duration in milliseconds and logs it using `structlog`. It also intelligently filters out noisy system queries (like `pg_catalog` lookups) so your logs remain clean.
+    </Callout>
+
+    When you run your app later (in Step 10), your logs will look like this:
+
+    ```log
+    [info] sql_query sql=SELECT tasks.id FROM tasks params=() duration_ms=1.23
+    ```
+  </Step>
+
+  <Step>
+    ### Dependency Injection for Sessions
+
+    ZCore provides a ready-to-use FastAPI dependency for database sessions. You don't need to write a `get_db` generator function manually.
+
+    ```python
+    from zcore import SessionDep
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    @app.get("/health")
+    async def health_check(db: SessionDep):
+        # db is an AsyncSession injected by ZCore's DI container
+        return {"status": "healthy"}
+    ```
+    `SessionDep` is an `Annotated[AsyncSession, Depends(get_db)]`. It resolves the active request-scoped session from the `IoCContainer`.
+  </Step>
+</Steps>
+
+Your database engine is configured and optimized. In Step 3, we will scaffold our first domain module (the `tasks` app) using the CLI.

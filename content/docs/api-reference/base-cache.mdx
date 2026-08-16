@@ -1,0 +1,188 @@
+---
+title: BaseCache & Caching Layer
+description: API reference for BaseCache with Redis integration, Pydantic deserialization, and in-memory TTLLRUCache fallback.
+icon: Database
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`BaseCache` provides a unified caching interface supporting distributed caching (via Redis) with an asynchronous, thread-safe local memory fallback (via `TTLLRUCache`). It coordinates global cache lifecycles, structured serialization, and periodic background eviction.
+
+## Class Definition
+
+```python
+from typing import Generic, TypeVar
+from zcore.cache import BaseCache
+
+T = TypeVar("T")
+
+class BaseCache(Generic[T]):
+    def __init__(self, prefix: str) -> None:
+        ...
+```
+
+---
+
+## Initialization Parameters
+
+<TypeTable
+  type={{
+    prefix: {
+      type: 'str',
+      description: 'Namespace prefix applied to all keys managed by this instance (e.g., "tasks" creates keys like "tasks:123").',
+    }
+  }}
+/>
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    redis_client: {
+      type: 'Any | None',
+      description: 'The active shared Redis client connection, or None if distributed caching is uninitialized.',
+    }
+  }}
+/>
+
+---
+
+## Methods
+
+### `get`
+
+Retrieves and deserializes a cache record by its key. Looks up records from Redis first, falling back to the local memory store on connection errors or missing pools.
+
+```python
+async def get(
+    self, 
+    key: str, 
+    target_type: Optional[Type[BaseModel]] = None
+) -> Optional[Union[T, BaseModel, Any]]: ...
+```
+
+<TypeTable
+  type={{
+    key: {
+      type: 'str',
+      description: 'The unique identifier key query (without the prefix).',
+    },
+    target_type: {
+      type: 'Type[BaseModel] | None',
+      default: 'None',
+      description: 'Optional Pydantic model class type to validate the decoded payload against.',
+    },
+    returns: {
+      type: 'T | BaseModel | Any | None',
+      description: 'The parsed data structure or validated Pydantic model instance, or None if missing or corrupted.',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="🔄">
+  **Automatic Pydantic Validation:** If `target_type` is provided (e.g., `TaskResponse`), `BaseCache` automatically deserializes the raw JSON and invokes `target_type.model_validate(parsed_data)`.
+</Callout>
+
+### `set`
+
+Serializes and persists a key-value record with a Time-To-Live (TTL). Stores in Redis if available, falling back to the thread-safe local memory buffer on network failures.
+
+```python
+async def set(self, key: str, value: T, ttl: int = 3600) -> None: ...
+```
+
+<TypeTable
+  type={{
+    key: {
+      type: 'str',
+      description: 'The unique identifier key to store.',
+    },
+    value: {
+      type: 'T',
+      description: 'The data payload to serialize (using custom JSON encoder) and cache.',
+    },
+    ttl: {
+      type: 'int',
+      default: '3600',
+      description: 'Maximum cache lifespan in seconds (Default: 1 hour).',
+    }
+  }}
+/>
+
+### `delete`
+
+Evicts a record from both distributed Redis and local memory fallback caches.
+
+```python
+async def delete(self, key: str) -> None: ...
+```
+
+<TypeTable
+  type={{
+    key: {
+      type: 'str',
+      description: 'The unique key identifier to evict.',
+    }
+  }}
+/>
+
+---
+
+## Global Cache Functions
+
+### `init_cache`
+
+Configures the shared distributed Redis client and schedules the background in-memory garbage collection worker loop.
+
+```python
+from zcore.cache import init_cache
+
+def init_cache(redis_url: Optional[str] = None, **kwargs: Any) -> None: ...
+```
+
+<TypeTable
+  type={{
+    redis_url: {
+      type: 'str | None',
+      default: 'None',
+      description: 'Connection URL pointing to a Redis server instance (e.g., "redis://localhost:6379").',
+    },
+    '**kwargs': {
+      type: 'Any',
+      description: 'Connection pool parameters forwarded directly to the Redis client initialization.',
+    }
+  }}
+/>
+
+### `close_cache`
+
+Cancels background eviction worker loops and cleanly closes shared distributed Redis connections.
+
+```python
+from zcore.cache import close_cache
+
+async def close_cache() -> None: ...
+```
+
+---
+
+## Local In-Memory Fallback: `TTLLRUCache`
+
+Thread-safe in-memory cache featuring granular record-level expiration boundaries and LRU eviction:
+
+```python
+from zcore.cache import TTLLRUCache
+
+class TTLLRUCache:
+    def __init__(self, maxsize: int = 1000) -> None: ...
+    def get(self, key: str) -> Optional[Any]: ...
+    def set(self, key: str, value: Any, ttl: int = 3600) -> None: ...
+    def delete(self, key: str) -> None: ...
+    def evict_expired(self) -> None: ...
+    
+    @classmethod
+    def evict_all_expired(cls) -> None: ...
+```

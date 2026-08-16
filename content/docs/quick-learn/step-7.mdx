@@ -1,0 +1,61 @@
+---
+title: Step 7 - Business Logic Layer (BaseService & DI)
+description: Isolate business rules using lifecycle hooks and automatic dependency injection.
+icon: Layers
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The Service layer orchestrates business rules between the web layer and the database layer. ZCore's `BaseService` provides structured hooks to intercept operations before and after they execute.
+
+<Steps>
+  <Step>
+    ### Create the Service with Auto-Wiring
+
+    Open `tasks/services.py`. ZCore's dependency injection container resolves type hints automatically, allowing clean constructor signatures:
+
+    ```python
+    # tasks/services.py
+    from typing import Any
+    from zcore import BaseService
+    from .models import Task
+    from .repositories import TaskRepo
+    from .schemas import TaskCreate
+
+    class TaskService(BaseService[Task]):
+        # The repository dependency is automatically resolved and injected by the IoC container
+        def __init__(self, repo: TaskRepo):
+            super().__init__(model=Task, repository=repo)
+
+        async def pre_create(self, schema: TaskCreate) -> dict[str, Any] | None:
+            # This hook runs BEFORE the database insert.
+            # Data returned here is merged with the schema payload.
+            return {"title": schema.title.upper()}  # Example: force title to uppercase
+    ```
+  </Step>
+
+  <Step>
+    ### Understanding the Hooks
+
+    <Callout type="info" emoji="🪝">
+      **Complete Lifecycle Hooks:** `BaseService` exposes a comprehensive suite of hooks to intercept database operations:
+      
+      * **Read operations:** `post_get`, `post_get_multi`
+      * **Create operations:** `pre_create`, `post_create`, `pre_create_multi`, `post_create_multi`
+      * **Update operations:** `pre_update`, `post_update`, `pre_update_multi`, `post_update_multi`
+      * **Delete operations:** `pre_delete`, `post_delete`, `pre_delete_multi`, `post_delete_multi`
+      * **Search operations:** `pre_search`, `post_search`
+      
+      Returning a dictionary from any `pre_*` hook merges that data directly into the database payload. This is ideal for tasks like auto-generating slug fields, populating audit timestamps, or running external API checks before finalizing database writes.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Transaction Autonomy
+
+    ZCore simplifies transaction boundaries by automating database commits internally. Rather than scattering `db.commit()` across your code, `BaseService` invokes `_safe_commit()`. It dynamically checks whether the session is managed under a `UnitOfWork`. If it is, ZCore delegates commit orchestration to the UoW; otherwise, it commits the changes safely and immediately.
+  </Step>
+</Steps>
+
+Our logic is ready. Now, let's expose it to the web with an auto-scaffolding router.

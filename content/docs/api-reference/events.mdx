@@ -1,0 +1,165 @@
+---
+title: EventDispatcher & @on_event
+description: API reference for EventDispatcher, the @on_event listener decorator, and dynamic IoC-backed subscriber registration.
+icon: Bell
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `EventDispatcher` coordinates event subscriptions and concurrent asynchronous execution. It allows decoupled application services to communicate via event channels without holding direct references to each other.
+
+## Class Definition & Decorator
+
+```python
+from zcore import EventDispatcher, on_event
+# or: from zcore.kernel.events import EventDispatcher, on_event
+```
+
+---
+
+## Decorator: `@on_event`
+
+Marks an asynchronous service method as an active subscriber for a specific event channel.
+
+```python
+def on_event(event_name: str) -> Callable[[Any], Any]: ...
+```
+
+<TypeTable
+  type={{
+    event_name: {
+      type: 'str',
+      description: 'The unique string identifier of the event channel to subscribe to (e.g., "order.completed").',
+    },
+    returns: {
+      type: 'Callable[[Any], Any]',
+      description: 'The decorated method tagged with internal _event_listener metadata.',
+    }
+  }}
+/>
+
+---
+
+## Class: `EventDispatcher`
+
+```python
+class EventDispatcher:
+    def __init__(self) -> None:
+        ...
+```
+
+---
+
+## Methods
+
+### `register_listeners`
+
+Inspects a service class for methods decorated with `@on_event` and registers them as lazy event handlers in the dispatcher.
+
+```python
+def register_listeners(self, cls: Type[Any], container: Any) -> None: ...
+```
+
+<TypeTable
+  type={{
+    cls: {
+      type: 'Type[Any]',
+      description: 'The service class type to inspect for @on_event decorated methods.',
+    },
+    container: {
+      type: 'IoCContainer',
+      description: 'The active IoCContainer instance used to resolve the class dynamically at execution time.',
+    },
+    returns: {
+      type: 'None',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="⚡">
+  **Scoped Resolution:** `register_listeners` does not instantiate the class immediately. When the event fires, it invokes `container.resolve(cls)` dynamically. This ensures that request-scoped dependencies (such as database sessions) are resolved cleanly within the active execution scope.
+</Callout>
+
+### `dispatch`
+
+Asynchronously dispatches an event, executing all registered handlers concurrently.
+
+```python
+async def dispatch(
+    self, 
+    event_name: str, 
+    *args: Any, 
+    **kwargs: Any
+) -> list[Any]: ...
+```
+
+<TypeTable
+  type={{
+    event_name: {
+      type: 'str',
+      description: 'The unique event channel identifier to trigger.',
+    },
+    '*args': {
+      type: 'Any',
+      description: 'Positional arguments forwarded directly to subscriber handlers.',
+    },
+    '**kwargs': {
+      type: 'Any',
+      description: 'Keyword arguments forwarded directly to subscriber handlers.',
+    },
+    returns: {
+      type: 'list[Any]',
+      description: 'A compiled list containing return values from all invoked event handlers.',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="🛡️">
+  **Concurrent Execution & Error Isolation:**
+  * Asynchronous coroutines are gathered using `asyncio.gather(*tasks, return_exceptions=True)`.
+  * Synchronous subscriber functions are executed inline safely.
+  * If an individual handler raises an unhandled exception, `EventDispatcher` logs the error with full traceback diagnostics, preventing a single failing subscriber from crashing other handlers or breaking the caller.
+</Callout>
+
+### `subscribe`
+
+Directly registers a standalone callback function to listen for an event channel.
+
+```python
+def subscribe(self, event_name: str, handler: EventHandler) -> None: ...
+```
+
+<TypeTable
+  type={{
+    event_name: {
+      type: 'str',
+      description: 'The target event channel identifier.',
+    },
+    handler: {
+      type: 'Callable[..., Coroutine[Any, Any, Any] | Any]',
+      description: 'An async or sync callable handler to invoke when the event is triggered.',
+    }
+  }}
+/>
+
+### `unsubscribe`
+
+Deregisters a previously registered callback handler from an event channel.
+
+```python
+def unsubscribe(self, event_name: str, handler: EventHandler) -> None: ...
+```
+
+<TypeTable
+  type={{
+    event_name: {
+      type: 'str',
+      description: 'The target event channel identifier.',
+    },
+    handler: {
+      type: 'EventHandler',
+      description: 'The callback handler to remove from the subscriber list.',
+    }
+  }}
+/>

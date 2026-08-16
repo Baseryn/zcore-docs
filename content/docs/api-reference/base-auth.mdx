@@ -1,0 +1,134 @@
+---
+title: BaseAuth
+description: API reference for the generic BaseAuth authentication template and dynamic context binding pipeline.
+icon: UserCheck
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`BaseAuth` is a generic Template-Method authentication dependency. It coordinates JWT decoding, automatic user caching, active-state assertions, and dynamically binds schema attributes directly onto the shared `ZContext`.
+
+## Class Definition
+
+```python
+from typing import Generic, TypeVar, Type, Any
+from pydantic import BaseModel
+from zcore import BaseAuth
+
+T = TypeVar("T", bound=BaseModel)
+
+class BaseAuth(Generic[T]):
+    def __init__(
+        self,
+        user_schema: Type[T],
+        identity_claim: str = "sub",
+        token_type: str = "access",
+        cache_prefix: str = "auth",
+        cache_ttl: int = 300
+    ) -> None:
+        ...
+```
+
+---
+
+## Initialization Parameters
+
+<TypeTable
+  type={{
+    user_schema: {
+      type: 'Type[T]',
+      description: 'The validated Pydantic model representation of the user.',
+    },
+    identity_claim: {
+      type: 'str',
+      default: '"sub"',
+      description: 'The JWT payload claim key denoting user identity (e.g., "sub" or "user_id").',
+    },
+    token_type: {
+      type: 'str',
+      default: '"access"',
+      description: 'The required value of the "type" claim in the validated JWT.',
+    },
+    cache_prefix: {
+      type: 'str',
+      default: '"auth"',
+      description: 'Cache prefix namespace used by BaseCache for storing resolved user profiles.',
+    },
+    cache_ttl: {
+      type: 'int',
+      default: '300',
+      description: 'Expiration lifespan of cached user instances in seconds (5 minutes).',
+    }
+  }}
+/>
+
+---
+
+## Methods
+
+### `fetch_user`
+
+Fetches the active user record from persistent storage. This is the **Template Method hook** that must be implemented by concrete subclass implementations in your application layer.
+
+```python
+async def fetch_user(self, identity: str) -> Any: ...
+```
+
+<TypeTable
+  type={{
+    identity: {
+      type: 'str',
+      description: 'Uniquely identifying string value extracted from the token (e.g., user ID, username, or email).',
+    },
+    returns: {
+      type: 'Any',
+      description: 'The database user entity or dictionary. Raises NotImplementedError if not overridden.',
+    }
+  }}
+/>
+
+### `__call__`
+
+Executes the core request interception authentication workflow. Functions as a callable FastAPI dependency (`Depends(auth_instance)`).
+
+```python
+async def __call__(
+    self, 
+    request: Request, 
+    token: str = Depends(oauth2_scheme)
+) -> T: ...
+```
+
+<TypeTable
+  type={{
+    request: {
+      type: 'Request',
+      description: 'The incoming FastAPI HTTP request instance.',
+    },
+    token: {
+      type: 'str',
+      description: 'The extracted Bearer token from the Authorization header.',
+    },
+    returns: {
+      type: 'T',
+      description: 'The validated Pydantic schema model instance representing the authenticated user. Raises AuthError on failures.',
+    }
+  }}
+/>
+
+---
+
+## Execution Flow & Context Binding
+
+<Callout type="info" emoji="🧩">
+  **The `BaseAuth` Pipeline:**
+  1. **Token Extraction:** Extracts the Bearer token via `OAuth2PasswordBearer(tokenUrl="token")`.
+  2. **JWT Decoding:** Decodes the token using `Security.decode_jwt()`, validating the signature, expiration, and asserting `type == token_type`.
+  3. **Cache-Aside Check:** Checks `BaseCache(prefix="auth")` for key `user:{identity}`. If a cache hit occurs, it deserializes directly into `user_schema`.
+  4. **Database Resolution:** If a cache miss occurs, invokes `await self.fetch_user(identity)`, asserts `is_active == True`, validates with `user_schema.model_validate(db_user)`, and populates the cache for 300 seconds.
+  5. **Dynamic Context Population:**
+     * `user.id` $\rightarrow$ `ctx.user_id`
+     * `user.all_restricted_fields` $\rightarrow$ `ctx.restricted_fields` (as an immutable `frozenset`)
+     * All remaining fields (e.g., `scopes`, `roles`, `email`) $\rightarrow$ `ctx.set(field_name, value)`
+</Callout>

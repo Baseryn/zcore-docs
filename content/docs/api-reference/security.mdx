@@ -1,0 +1,207 @@
+---
+title: Security Services
+description: API reference for the Security class providing Argon2id password hashing, JWT lifecycle, and cryptographic utilities.
+icon: Lock
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `Security` class is a unified coordinator for cryptographic and authentication operations. It provides memory-hard password hashing (Argon2id), JSON Web Token (JWT) encoding/decoding, secure hexadecimal generation, and SHA-256 digests.
+
+## Class Definition
+
+```python
+from zcore import Security
+# or: from zcore.security import Security
+
+class Security:
+    ...
+```
+
+---
+
+## Password Hashing Methods (Argon2id)
+
+ZCore configures `argon2-cffi` with dynamic hardware parameter tuning (`memory_cost`, `time_cost`, `parallelism`) from the active `Settings`.
+
+### `hash_password`
+
+Generates a secure Argon2id hash from a plain-text password.
+
+```python
+@staticmethod
+def hash_password(password: str) -> str: ...
+```
+
+<TypeTable
+  type={{
+    password: {
+      type: 'str',
+      description: 'The plain-text password to hash.',
+    },
+    returns: {
+      type: 'str',
+      description: 'The computed Argon2id cryptographic hash string.',
+    }
+  }}
+/>
+
+### `verify_password`
+
+Verifies a plain-text password against a stored Argon2id hash.
+
+```python
+@staticmethod
+def verify_password(plain_password: str, hashed_password: str) -> bool: ...
+```
+
+<TypeTable
+  type={{
+    plain_password: {
+      type: 'str',
+      description: 'The unhashed candidate password.',
+    },
+    hashed_password: {
+      type: 'str',
+      description: 'The valid stored Argon2id hash string.',
+    },
+    returns: {
+      type: 'bool',
+      description: 'True if the candidate password matches the hash, False otherwise.',
+    }
+  }}
+/>
+
+---
+
+## JWT Methods
+
+### `create_jwt`
+
+Creates a signed JWT access token.
+
+```python
+@classmethod
+def create_jwt(
+    cls, 
+    data: dict, 
+    expires_delta: Optional[timedelta] = None
+) -> str: ...
+```
+
+<TypeTable
+  type={{
+    data: {
+      type: 'dict',
+      description: 'The payload claims dictionary to encode.',
+    },
+    expires_delta: {
+      type: 'timedelta | None',
+      default: 'None',
+      description: 'Optional custom lifetime duration. Defaults to settings.ACCESS_TOKEN_EXPIRE_MINUTES.',
+    },
+    returns: {
+      type: 'str',
+      description: 'The signed JWT token string.',
+    }
+  }}
+/>
+
+### `decode_jwt`
+
+Decodes, validates the signature, and checks the expiration of a signed JWT string.
+
+```python
+@classmethod
+def decode_jwt(cls, token: str) -> dict: ...
+```
+
+<TypeTable
+  type={{
+    token: {
+      type: 'str',
+      description: 'The signed JWT token string to decode.',
+    },
+    returns: {
+      type: 'dict',
+      description: 'The decoded payload claims dictionary. Raises AuthError if expired or structurally invalid.',
+    }
+  }}
+/>
+
+### `is_token_expired`
+
+Checks if a Unix timestamp expiration claim has expired against UTC current time.
+
+```python
+@staticmethod
+def is_token_expired(token_exp: int) -> bool: ...
+```
+
+<TypeTable
+  type={{
+    token_exp: {
+      type: 'int',
+      description: 'The Unix timestamp integer (the "exp" claim) to verify.',
+    },
+    returns: {
+      type: 'bool',
+      description: 'True if the timestamp is in the past or missing, False otherwise.',
+    }
+  }}
+/>
+
+<Callout type="warn" emoji="🚨">
+  **Fail-Fast Production Secret Assertion:**
+  The internal key resolver `_get_signing_keys()` actively asserts that if `settings.DEBUG` is `False` (Production) and `settings.SECRET_KEY` matches the default insecure fallback string, application startup is **aborted immediately** with a critical `RuntimeError`.
+</Callout>
+
+---
+
+## Cryptographic Utilities
+
+### `generate_secure_token`
+
+Generates a cryptographically secure random hexadecimal token.
+
+```python
+@staticmethod
+def generate_secure_token(length: int = 32) -> str: ...
+```
+
+<TypeTable
+  type={{
+    length: {
+      type: 'int',
+      default: '32',
+      description: 'Target byte capacity to encode into hex (results in a string of length*2 characters).',
+    },
+    returns: {
+      type: 'str',
+      description: 'A cryptographically secure hex string.',
+    }
+  }}
+/>
+
+### `hash_sha256`
+
+Generates a SHA-256 hex digest of the provided string data.
+
+```python
+@staticmethod
+def hash_sha256(data: str) -> str: ...
+```
+
+<TypeTable
+  type={{
+    data: {
+      type: 'str',
+      description: 'Raw text parameters to digest.',
+    },
+    returns: {
+      type: 'str',
+      description: 'A 64-character hexadecimal SHA-256 hash string.',
+    }
+  }}
+/>

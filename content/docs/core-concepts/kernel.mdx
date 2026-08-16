@@ -1,0 +1,94 @@
+---
+title: Kernel & Plugin Orchestration
+description: Understand how ZCore orchestrates application modularity, topological startup ordering, and deterministic lifespans.
+icon: Boxes
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+As monolithic applications or microservices grow, managing disparate `@app.on_event("startup")` hooks across multiple domains leads to non-deterministic startup bugs. ZCore introduces the **`Kernel`** and a runtime-checkable **`Plugin`** protocol to enforce a deterministic Directed Acyclic Graph (DAG) lifecycle.
+
+---
+
+## 1. The Plugin Protocol
+
+A ZCore plugin is a modular domain unit conforming to the `Plugin` protocol. Each plugin declares its metadata, upstream dependencies, and lifecycle hooks:
+
+```python
+# plugins.py
+from fastapi import FastAPI
+from zcore import Plugin
+
+class TasksPlugin(Plugin):
+    name: str = "tasks"
+    version: str = "1.0.0"
+    dependencies: list[str] = ["auth"]  # Requires AuthPlugin to start first
+
+    def setup(self, app: FastAPI) -> None:
+        # Attach routers and middleware during application initialization
+        from .routers import router_instance
+        app.include_router(router_instance.router)
+
+    async def before_startup(self) -> None:
+        # Pre-initialization routines
+        pass
+
+    async def on_startup(self) -> None:
+        # Core domain startup (e.g., cache warming)
+        pass
+
+    async def after_startup(self) -> None:
+        # Post-initialization tasks
+        pass
+
+    async def on_shutdown(self) -> None:
+        # Teardown logic (e.g., closing domain-specific connection pools)
+        pass
+```
+
+---
+
+## 2. Topological Sorting (DAG Resolution)
+
+When `kernel.setup(app)` is executed, the Kernel inspects all registered plugins and builds a dependency graph. Using Python's native `graphlib.TopologicalSorter`, it flattens the graph into a strictly ordered execution sequence:
+
+<Mermaid chart="graph LR
+    Auth[AuthPlugin] --> Tasks[TasksPlugin]
+    Auth --> Billing[BillingPlugin]
+    Tasks --> Reports[ReportsPlugin]
+    Billing --> Reports"/>
+
+<Callout type="warn" emoji="⚠️">
+  **Strict Dependency Integrity:**
+  * **Missing Dependencies:** If `TasksPlugin` declares `dependencies = ["auth"]`, but no plugin with `name = "auth"` was added to the Kernel, startup aborts immediately with a descriptive `RuntimeError`.
+  * **Cyclic Dependencies:** If Plugin A depends on Plugin B, and Plugin B depends on Plugin A, the Kernel detects the cycle and raises a `RuntimeError` before running any application code.
+</Callout>
+
+---
+
+## 3. Deterministic Lifespan Orchestration
+
+The Kernel integrates natively with FastAPI's `lifespan` context manager (`FastAPI(lifespan=kernel.lifespan)`).
+
+### Startup Sequence (Topological Order)
+1. Runs `before_startup()` for all plugins in dependency order.
+2. Runs `on_startup()` for all plugins in dependency order.
+3. Runs `after_startup()` for all plugins in dependency order.
+
+### Shutdown Sequence (Strictly Reversed Order)
+Upon application termination, the Kernel executes `on_shutdown()` in **reverse topological order**. 
+
+If `AuthPlugin` started before `TasksPlugin`, then `TasksPlugin` will shut down **before** `AuthPlugin`. This prevents orphaned state transitions or database errors if `TasksPlugin` attempts to write audit logs during shutdown.
+
+---
+
+## 4. Centralized Event Dispatching
+
+During `kernel.setup(app)`, the Kernel automatically registers its active `EventDispatcher` instance as a global Singleton in the `IoCContainer`:
+
+```python
+# Kernel registers the singleton internally:
+container.register_singleton(EventDispatcher, self.dispatcher)
+```
+
+This decouples your application layers: any service or repository can inject `EventDispatcher` and publish domain events without holding direct references to listening modules.

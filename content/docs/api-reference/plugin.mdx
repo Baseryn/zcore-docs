@@ -1,0 +1,146 @@
+---
+title: Plugin Protocol
+description: API reference for the runtime-checkable Plugin protocol defining modular application lifecycles.
+icon: Puzzle
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `Plugin` module defines the structured contract interface (a `runtime_checkable` Protocol) that all modular ZCore domain plugins must satisfy to register with the central application orchestrator `Kernel`.
+
+## Protocol Definition
+
+```python
+from typing import Protocol, runtime_checkable
+from fastapi import FastAPI
+from zcore import Plugin
+
+@runtime_checkable
+class Plugin(Protocol):
+    name: str
+    version: str
+    dependencies: list[str]
+
+    def setup(self, app: FastAPI) -> None: ...
+    async def before_startup(self) -> None: ...
+    async def on_startup(self) -> None: ...
+    async def after_startup(self) -> None: ...
+    async def on_shutdown(self) -> None: ...
+```
+
+---
+
+## Required Protocol Attributes
+
+<TypeTable
+  type={{
+    name: {
+      type: 'str',
+      description: 'Unique string identifying the plugin module (e.g., "tasks", "billing").',
+    },
+    version: {
+      type: 'str',
+      description: 'Semantic version description string of the plugin (e.g., "0.1.0").',
+    },
+    dependencies: {
+      type: 'list[str]',
+      description: 'Identifiers listing direct upstream plugin dependency names that must initialize before this plugin.',
+    }
+  }}
+/>
+
+---
+
+## Lifecycle Methods
+
+All classes implementing `Plugin` must provide these lifecycle methods:
+
+### `setup`
+
+Executes core module registration tasks and attaches routers/middlewares to the FastAPI app. Invoked during `kernel.setup(app)`.
+
+```python
+def setup(self, app: FastAPI) -> None: ...
+```
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The parent FastAPI application instance.',
+    },
+    returns: {
+      type: 'None',
+    }
+  }}
+/>
+
+### `before_startup`
+
+Performs pre-initialization operations before any other application startup phases begin.
+
+```python
+async def before_startup(self) -> None: ...
+```
+
+### `on_startup`
+
+Executes core asynchronous logic during application startup (e.g., warming local caches, validating external services).
+
+```python
+async def on_startup(self) -> None: ...
+```
+
+### `after_startup`
+
+Executes post-initialization processes after all plugins have finished their primary startup phases.
+
+```python
+async def after_startup(self) -> None: ...
+```
+
+### `on_shutdown`
+
+Performs graceful cleanup and releases external resources (e.g., connection pools, background workers) during application termination.
+
+```python
+async def on_shutdown(self) -> None: ...
+```
+
+---
+
+## Implementation Example
+
+```python
+from fastapi import FastAPI
+from zcore import Plugin
+from .routers import router_instance
+
+class TasksPlugin(Plugin):
+    name: str = "tasks"
+    version: str = "1.0.0"
+    dependencies: list[str] = ["auth"]  # Requires AuthPlugin to start first
+
+    def setup(self, app: FastAPI) -> None:
+        # Attach this module's sub-router to the main app
+        app.include_router(router_instance.router)
+
+    async def before_startup(self) -> None:
+        pass
+
+    async def on_startup(self) -> None:
+        # Perform startup logic
+        pass
+
+    async def after_startup(self) -> None:
+        pass
+
+    async def on_shutdown(self) -> None:
+        # Cleanup resources
+        pass
+```
+
+<Callout type="info" emoji="💡">
+  **Scaffolding Plugins:** Running `zc startapp <name> --template` in your terminal automatically generates a populated `plugin.py` file satisfying this protocol.
+</Callout>

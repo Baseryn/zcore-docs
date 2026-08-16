@@ -1,0 +1,84 @@
+---
+title: How to mask sensitive fields dynamically
+description: Use Zchema to automatically prune fields from API responses, sanitize inputs, and mask OpenAPI schemas.
+icon: ShieldCheck
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Instead of maintaining separate Pydantic models for public, user, and admin views (e.g., `TaskPublic`, `TaskAdmin`), ZCore provides dynamic, role-aware projection via `Zchema`.
+
+<Steps>
+  <Step>
+    ### 1. Bind Schema to a Domain
+
+    Inherit from `Zchema` and set the `__model__` class attribute to your domain identifier:
+
+    ```python
+    # schemas.py
+    import uuid
+    from zcore import Zchema
+    from pydantic import ConfigDict
+
+    class TaskResponse(Zchema):
+        __model__ = "tasks"  # Binds this schema to the 'tasks' domain
+        
+        id: uuid.UUID
+        title: str
+        salary: float        # Sensitive field!
+        
+        model_config = ConfigDict(from_attributes=True)
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Set Restrictions in Context
+
+    During your authentication flow (or inside `BaseAuth`), load the active user's restricted paths into `ctx.restricted_fields`:
+
+    ```python
+    from zcore import ctx
+
+    # Mask 'salary' specifically on view/GET requests for the 'tasks' domain
+    ctx.restricted_fields = ["tasks.view.salary"]
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Automatic Response Pruning
+
+    When your endpoint returns a `TaskResponse` model or dictionary, `Zchema` intercepts serialization and removes restricted keys:
+
+    ```json
+    // Normal Output (Admin)
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "title": "Build Architecture",
+      "salary": 120000.0
+    }
+
+    // Filtered Output (Restricted User)
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "title": "Build Architecture"
+      // 'salary' is pruned automatically!
+    }
+    ```
+  </Step>
+</Steps>
+
+### Restriction Path Syntax
+
+| Pattern | Example | Effect |
+|---|---|---|
+| `<domain>.<action>.<field>` | `tasks.view.salary` | Prunes `salary` only on `view` (GET) actions. |
+| `<domain>.<field>` | `tasks.salary` | Globally prunes `salary` across all actions (create, update, view). |
+| `<domain>.<action>.<nested.path>` | `tasks.view.author.email` | Recursively traverses dicts/lists to prune `email`. |
+| `<domain>.<action>` | `tasks.view` | Masks the entire model representation (`*`). |
+
+<Callout type="info" emoji="🛡️">
+  **Bidirectional Protection & CDN Safety:**
+  * **Input Sanitization (Mass Assignment):** `Zchema` also filters incoming input payloads, silently dropping restricted fields before they reach your database services.
+  * **Cache Protection (`Vary` Header):** When fields are pruned, ZCore automatically appends `Vary: Authorization, Cookie` to HTTP response headers to prevent intermediate proxies or CDN caches from serving masked data to authorized users.
+</Callout>

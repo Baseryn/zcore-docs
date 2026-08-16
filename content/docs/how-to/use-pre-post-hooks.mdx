@@ -1,0 +1,90 @@
+---
+title: How to use pre/post hooks in Services
+description: Execute business logic, compute fields, and coordinate side-effects before, during, or after database mutations.
+icon: GitBranch
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore's `BaseService` divides database operations into three layers: **Pre-hooks** (intercept/merge payload), **On-methods** (core repository execution), and **Post-hooks** (side-effects & cleanup).
+
+<Steps>
+  <Step>
+    ### 1. Using `pre_*` and `post_*` Hooks
+
+    Return a `dict` from any `pre_*` mutation hook to automatically merge that data into the database payload:
+
+    ```python
+    # services.py
+    from typing import Any
+    from zcore import BaseService
+    from zcore.utils.helpers import slugify
+    from .models import Task
+    from .schemas import TaskCreate, TaskUpdate
+    from .repositories import TaskRepo
+
+    class TaskService(BaseService[Task]):
+        def __init__(self, repo: TaskRepo):
+            super().__init__(model=Task, repository=repo)
+        
+        async def pre_create(self, schema: TaskCreate) -> dict[str, Any] | None:
+            # Merges automatically into the insert payload
+            return {"slug": slugify(schema.title)}
+
+        async def post_delete(self, model: Task) -> None:
+            # Executes after deletion (e.g., delete files from storage)
+            if getattr(model, "file_path", None):
+                # await storage.delete(model.file_path)
+                pass
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Overriding Core Execution (`on_*` Methods)
+
+    If you need to change **how** the entity is persisted in the repository (e.g., routing to a custom repository method or bypassing default behavior), override the `on_*` methods directly:
+
+    ```python
+    class TaskService(BaseService[Task]):
+        def __init__(self, repo: TaskRepo):
+            super().__init__(model=Task, repository=repo)
+
+        async def on_create(self, schema: TaskCreate, **extra_data) -> Task:
+            # Custom persistence delegation (surrounded safely by pre_create and post_create)
+            return await self.repository.create(schema, **extra_data)
+            
+        async def on_delete(self, id: Any) -> Task | None:
+            # Example: Soft-delete override instead of permanent row deletion
+            return await self.repository.update(id, TaskUpdate(is_deleted=True), partial=True)
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Complete Lifecycle Hook Reference
+
+    | Hook | Category | Return Type | Purpose / Description |
+    |---|---|---|---|
+    | `post_get(model)` | Read (Single) | `Model` | Modify or append computed runtime fields after fetching. |
+    | `post_get_multi(models)` | Read (Batch) | `Sequence[Model]` | Intercept and process a batch list of retrieved entities. |
+    | `pre_create(schema)` | Create (Single) | `dict \| None` | Compute/merge data (e.g., slugs, hashes) before insert. |
+    | `post_create(model)` | Create (Single) | `None` | Trigger post-insert events (e.g., send emails, webhooks). |
+    | `pre_create_multi(schemas)` | Create (Batch) | `None` | Pre-validation check before inserting multiple records. |
+    | `post_create_multi(models)` | Create (Batch) | `None` | Run notifications or logging after bulk insertions. |
+    | `pre_update(id, schema, partial)` | Update (Single) | `dict \| None` | Compute/merge data into the update payload. |
+    | `post_update(model)` | Update (Single) | `None` | Clear cache keys or log modification audit trails. |
+    | `pre_update_multi(data, partial)` | Update (Batch) | `None` | Intercept batch dictionary updates before execution. |
+    | `post_update_multi(models)` | Update (Batch) | `None` | Perform side-effects after bulk updates finish. |
+    | `pre_delete(id)` | Delete (Single) | `None` | Verify dependencies or cascade rules before row removal. |
+    | `post_delete(model)` | Delete (Single) | `None` | Purge associated files from local/S3 storage. |
+    | `pre_delete_multi(ids)` | Delete (Batch) | `None` | Validate or check permissions for a list of target IDs. |
+    | `post_delete_multi(models)` | Delete (Batch) | `None` | Batch cleanup of external resources after deletions. |
+    | `pre_search(search_in)` | Search | `None` | Inspect or mutate `SearchRequest` filters dynamically. |
+    | `post_search(models)` | Search | `None` | Post-process or enrich dynamic search query results. |
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🔒">
+  **Atomic Transaction Safety:**
+  All `pre_*`, `on_*`, and `post_*` operations execute within the active transaction before `_safe_commit()` is invoked. If any hook raises an error, the entire operation is automatically rolled back.
+</Callout>

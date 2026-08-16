@@ -1,0 +1,81 @@
+---
+title: Step 8 - Web Layer & Plugin System
+description: Scaffold 7 secure endpoints instantly and register your domain with the application Kernel.
+icon: Network
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Instead of writing 7 redundant route functions for every model, ZCore's `BaseRouter` generates them securely. We then register everything via the `Plugin` system.
+
+<Steps>
+  <Step>
+    ### Configure the Router
+
+    Open `tasks/routers.py` and link your schemas, model, and service:
+
+    ```python
+    # tasks/routers.py
+    from zcore import BaseRouter, RouteKey
+    from .models import Task
+    from .schemas import TaskCreate, TaskUpdate, TaskResponse
+    from .services import TaskService
+
+    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+        model = Task
+        create_schema = TaskCreate
+        update_schema = TaskUpdate
+        schema_out = TaskResponse
+        service = TaskService
+        prefix = "/tasks"
+        tags = ["Tasks"]
+        
+        # Example: Exclude the DELETE endpoint
+        exclude = {RouteKey.DELETE}
+    ```
+  </Step>
+
+  <Step>
+    ### Wire the Plugin
+
+    Open `tasks/plugin.py`. The `Plugin` class manages the lifecycle of your domain. Ensure it includes your router:
+
+    ```python
+    # tasks/plugin.py
+    from zcore import Plugin
+    from fastapi import FastAPI
+    from .routers import TaskRouter
+
+    class TaskPlugin(Plugin):
+        name = "tasks"
+        version = "0.1.0"
+        dependencies = [] # Can list other plugin names if needed
+
+        def setup(self, app: FastAPI) -> None:
+            router_instance = TaskRouter()
+            app.include_router(router_instance.router)
+    ```
+  </Step>
+
+  <Step>
+    ### Register with the Kernel
+
+    Finally, open your root `main.py` and register the plugin with the `Kernel`. The Kernel uses topological sorting to ensure plugins start in the correct order.
+
+    ```python
+    # main.py (Add this before kernel.setup(app))
+    from tasks.plugin import TaskPlugin
+
+    # ... existing setup code ...
+    kernel.add_plugin(TaskPlugin())
+    kernel.setup(app)
+    ```
+
+    <Callout type="success" emoji="✅">
+      **Check it out:** Run `zc run` and navigate to `http://127.0.0.1:8000/docs`. You will see 6 fully functional, secure endpoints (POST, GET, GET_ALL, SEARCH, UPDATE, PATCH) generated automatically!
+    </Callout>
+  </Step>
+</Steps>
+
+We have a working API. But how do we secure it and make the `Zchema` masking actually work? Let's add authentication.

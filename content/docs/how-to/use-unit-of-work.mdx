@@ -1,0 +1,68 @@
+---
+title: How to use UnitOfWork for atomic transactions
+description: Coordinate multi-repository writes and post-commit domain events within an atomic all-or-nothing boundary.
+icon: Boxes
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+When multiple services or repositories must modify the database within a single transaction, instantiate a `UnitOfWork` block to guarantee atomicity.
+
+<Steps>
+  <Step>
+    ### 1. Instantiate `UnitOfWork` Inside the Service Method
+
+    Inject the system `EventDispatcher` and your repositories into the service constructor. Then, wrap multi-step database mutations inside `async with UnitOfWork(...)`:
+
+    ```python
+    # services.py
+    from zcore import BaseService, UnitOfWork, EventDispatcher
+    from .models import Order
+    from .repositories import OrderRepo, InventoryRepo
+    from .schemas import OrderCreate
+
+    class CheckoutService(BaseService[Order]):
+        def __init__(
+            self, 
+            repository: OrderRepo,
+            inventory_repo: InventoryRepo,
+            dispatcher: EventDispatcher
+        ):
+            super().__init__(model=Order, repository=repository)
+            self.inventory_repo = inventory_repo
+            self.dispatcher = dispatcher
+
+        async def process_checkout(self, order_data: OrderCreate, product_id: str, quantity: int):
+            # 1. Open an isolated transaction boundary using the active session and dispatcher
+            async with UnitOfWork(self.repository.db, self.dispatcher) as uow:
+                # Both operations share the exact same database transaction
+                order = await self.repository.create(order_data)
+                await self.inventory_repo.decrement_stock(product_id, quantity)
+
+                # 2. Buffer domain events to dispatch ONLY after successful commit
+                uow.register_event("order.completed", {"order_id": str(order.id)})
+                
+            # If any step fails, BOTH operations roll back and the event is never dispatched.
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Post-Commit Domain Events
+
+    `UnitOfWork.register_event(event_name, payload)` prevents side-effects on transaction failures:
+    * Events are queued in an internal buffer.
+    * If the database commit succeeds, all buffered events are dispatched concurrently via `EventDispatcher`.
+    * If a database error occurs or an exception is raised, the transaction rolls back and all pending events are discarded immediately.
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="⚡">
+  **Automatic Coordination with `BaseService`:**
+  Entering `async with UnitOfWork(...)` automatically marks the session as `uow_managed = True`. Any `BaseService` calls (such as `self.repository.create`) inside the block will automatically skip their individual commits and let `UnitOfWork` finalize the transaction on block exit.
+</Callout>
+
+<Callout type="warn" emoji="⚠️">
+  **No Manual Commits:**
+  Never call `db.commit()` manually when working inside a `UnitOfWork` block. Commit and rollback transitions are orchestrated automatically upon context exit (`__aexit__`).
+</Callout>

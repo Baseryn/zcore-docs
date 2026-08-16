@@ -1,0 +1,94 @@
+---
+title: Testing Infrastructure (ZTestClient)
+description: Explore how ZCore orchestrates IoC sandboxes, savepoint database rollbacks, context mocking, and application lifespans.
+icon: TestTube
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Testing multi-layered enterprise applications is notoriously difficult because of shared mutable state (database connections, IoC container singletons, context variables). ZCore solves this with **`ZTestClient`** and a suite of composable **`ZTestFixture`** orchestrators.
+
+---
+
+## 1. The Fixture Composition Pipeline
+
+When you open an `async with ZTestClient(...)` context, ZCore orchestrates a composite pipeline of isolated fixtures:
+
+<Mermaid chart="graph TB
+    Client[ZTestClient Entry] --> Sand[1. ContainerSandbox Snapshot]
+    Sand --> Life[2. AppLifespan Startup Hooks]
+    Life --> DB[3. DatabaseRollback Open Savepoint]
+    DB --> User[4. UserContext & DependencyOverride]
+    User --> Exec[Execute Async Test Logic]
+    Exec --> CleanDB[Rollback DB Transaction]
+    CleanDB --> CleanLife[AppLifespan Shutdown Hooks]
+    CleanLife --> CleanSand[Restore Container Snapshot]
+    CleanSand --> Done[Test Complete & Clean]"/>
+
+---
+
+## 2. IoC Container Sandboxing (`ContainerSandbox`)
+
+During integration testing, you may override dependencies or register mock services in the container. If test A mutates the container, test B might fail unexpectedly.
+
+`ContainerSandbox` captures a complete snapshot of `container._singletons`, `_scoped_definitions`, and `_factories` during `setUp()`. During `tearDown()`, it restores the exact snapshot, guaranteeing 100% test isolation.
+
+```python
+# Internal ContainerSandbox mechanics
+async def setUp(self):
+    self._singletons = dict(container._singletons)
+    self._scoped = dict(container._scoped_definitions)
+    self._factories = dict(container._factories)
+
+async def tearDown(self):
+    container._singletons = self._singletons
+    container._scoped_definitions = self._scoped
+    container._factories = self._factories
+```
+
+---
+
+## 3. Lightning-Fast Database Rollbacks (`DatabaseRollback`)
+
+Dropping tables, re-running database migrations, or truncating rows between test runs introduces severe latency.
+
+<Callout type="info" emoji="⚡">
+  **The Savepoint Strategy:**
+  1. `DatabaseRollback` opens a dedicated connection on the async engine and begins a root transaction.
+  2. It initializes an `AsyncSession` using `join_transaction_mode="create_savepoint"`.
+  3. It overrides `db_manager.session` and registers this session as the active request-scoped database dependency in the IoC container.
+  4. All test inserts, updates, and repository operations execute inside this savepoint.
+  5. Upon test exit, it executes `transaction.rollback()`. The database is instantly reverted to its pre-test state in milliseconds.
+</Callout>
+
+---
+
+## 4. Context & User Dependency Overrides
+
+Testing role-based endpoints in standard FastAPI requires manually manipulating `app.dependency_overrides` and generating dummy JWT tokens.
+
+`ZTestClient` coordinates this automatically when `user_id` is passed:
+
+1. **`UserContext`:** Injects `user_id`, `scopes`, and `extra_context` directly into the `ZContext` store for the active async coroutine tree.
+2. **`DependencyOverride`:** Replaces the `get_current_user_stub` dependency with an internal `GenericMockUser` implementing `UserProtocol`.
+
+```python
+# Seamless user mocking without JWT logic
+async with ZTestClient(
+    app=app,
+    user_id=uuid.uuid4(),
+    scopes=["tasks:delete", "tasks:create"],
+    extra_context={"restricted_fields": ["tasks.view.salary"]}
+) as client:
+    response = await client.delete(f"/tasks/{task_id}")
+    assert response.status_code == 200
+```
+
+---
+
+## 5. Application Lifespan Execution (`AppLifespan`)
+
+`ZTestClient` automatically invokes FastAPI's `router.lifespan_context`. This guarantees that:
+* Kernel plugins execute their `before_startup` and `on_startup` hooks.
+* Global singletons (like `EventDispatcher` and cache workers) are active during tests.
+* Upon test completion, `on_shutdown` hooks execute in reverse order to release connection pools cleanly.

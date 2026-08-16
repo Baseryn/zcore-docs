@@ -1,0 +1,51 @@
+---
+title: Step 6 - Data Access Layer (BaseRepository)
+description: Implement asynchronous CRUD, keyset pagination, and secure search out of the box with zero boilerplate.
+icon: Search
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Writing the same `SELECT`, `INSERT`, and `UPDATE` queries for every model is tedious. ZCore's `BaseRepository` eliminates this boilerplate.
+
+<Steps>
+  <Step>
+    ### Create the Repository
+
+    Open `tasks/repositories.py`. Inherit from `BaseRepository` and pass your model type:
+
+    ```python
+    # tasks/repositories.py
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from zcore import BaseRepository
+    from .models import Task
+
+    class TaskRepo(BaseRepository[Task]):
+        def __init__(self, db: AsyncSession):
+            super().__init__(model=Task, db=db)
+    ```
+  </Step>
+
+  <Step>
+    ### What You Just Unlocked
+
+    <Callout type="info" emoji="📦">
+      **Out-of-the-box features:** By writing this empty class, `TaskRepo` now has access to:
+      * **CRUD:** `create`, `create_multi`, `get`, `get_by_ids`, `update`, `delete`
+      * **Batch Operations:** `update_multi`, `delete_multi`
+      * **Pagination:** `get_list` (supports both Page-Number and high-performance Cursor pagination)
+      * **Dynamic Search:** `search` (compiles nested JSON filters into safe SQL with depth-limit protection)
+      
+      All methods are fully asynchronous and type-hinted.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### No Lock-In
+
+    If you have a complex query that requires a raw SQL `JOIN` or a CTE, you can simply write a new custom method or override any existing CRUD method inside `TaskRepo`. Because ZCore never hides the `AsyncSession` from you, you have full access to SQLAlchemy's power directly inside your repository.
+  </Step>
+</Steps>
+
+Next, we will add our business logic layer using `BaseService`.

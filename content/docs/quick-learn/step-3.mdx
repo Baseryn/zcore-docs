@@ -1,0 +1,46 @@
+---
+title: Step 3 - Scaffolding Domain Modules
+description: Use the ZCore CLI to generate a structured, decoupled domain module for your tasks.
+icon: Boxes
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Files, File, Folder } from 'fumadocs-ui/components/files';
+
+A core philosophy of ZCore is organizing applications into decoupled, modular domains. Instead of throwing all files into a single `routers.py` or `models.py`, we structure them by business capability.
+
+<Steps>
+  <Step>
+    ### Generate the Domain
+
+    Run the following CLI command to scaffold a `tasks` domain. The `--template` flag generates boilerplate code to get us started immediately.
+
+    ```bash
+    zc startapp tasks --template
+    ```
+  </Step>
+
+  <Step>
+    ### Examine the Structure
+
+    ZCore generates a self-contained directory for your domain:
+
+    <Files>
+      <Folder name="tasks" defaultOpen>
+        <File name="models.py" />
+        <File name="schemas.py" />
+        <File name="repositories.py" />
+        <File name="services.py" />
+        <File name="routers.py" />
+        <File name="plugin.py" />
+      </Folder>
+    </Files>
+
+    <Callout type="info" emoji="💡">
+      **Separation of Concerns:** This structure decouples your database access (`repositories.py`) from your business logic (`services.py`) and web layer (`routers.py`). You are free to delete or modify any of these files.
+    </Callout>
+  </Step>
+</Steps>
+
+Now we have a clean slate. In the next step, we will define our database model inside this module.

@@ -1,0 +1,92 @@
+---
+title: Zchema & Context Shielding
+description: Understand how ZCore intercepts Pydantic V2 to provide dynamic, role-based field pruning across validation, serialization, and OpenAPI schema generation.
+icon: ShieldCheck
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Maintaining distinct Pydantic models for different user roles (e.g., `TaskCreatePublic`, `TaskCreateAdmin`, `TaskResponseUser`, `TaskResponseAdmin`) leads to massive code duplication and violates the DRY principle. ZCore solves this with **`Zchema`**, an intelligent schema abstraction that intercepts Pydantic V2 core compilation and execution hooks.
+
+---
+
+## 1. The Triple Pruning Pipeline
+
+`Zchema` enforces security boundaries across all three phases of the HTTP data lifecycle:
+
+<Mermaid chart="graph TB
+    subgraph 1. Inbound Request
+    Input[Incoming HTTP JSON] --> VBefore[@model_validator before]
+    VBefore --> PruneIn[Drop Restricted Fields: Mass Assignment Safe]
+    PruneIn --> Validated[Validated Pydantic Instance]
+    end
+
+    subgraph 2. Outbound Response
+    Validated --> Wrap[@model_serializer wrap]
+    Wrap --> PruneOut[Prune Restricted Keys Recursively]
+    PruneOut --> JSON[Filtered Response JSON]
+    end
+
+    subgraph 3. Documentation
+    Swagger[GET /endpoint?schema=true] --> GetSchema[__get_pydantic_json_schema__]
+    GetSchema --> PruneDoc[Remove from properties & required]
+    PruneDoc --> SafeSchema[Masked OpenAPI Specification]
+    end"/>
+
+1. **Input Validation (Mass Assignment Prevention):**
+   By intercepting `@model_validator(mode="before")`, `Zchema` inspects incoming JSON payloads. If an unauthorized user attempts to inject restricted fields (e.g., submitting `is_superuser: true` or `salary: 100000`), the forbidden fields are silently stripped before Pydantic initializes the model.
+2. **Output Serialization (Data Leakage Prevention):**
+   By wrapping `@model_serializer(mode="wrap")`, `Zchema` intercepts the serialized dictionary before it is rendered to JSON. It recursively traverses nested dictionaries and lists to purge any restricted attributes.
+3. **JSON Schema Generation (OpenAPI & Dynamic Forms):**
+   By overriding `__get_pydantic_json_schema__`, `Zchema` dynamically alters the generated Draft-7 JSON Schema. Forbidden fields are stripped from both the `properties` definition and the `required` validation array.
+
+---
+
+## 2. Context-Aware Path Resolution
+
+`Zchema` computes relative restriction paths by cross-referencing `ctx.restricted_fields` against the schema's `__model__` attribute:
+
+```python
+# schemas.py
+from zcore import Zchema
+
+class TaskResponse(Zchema):
+    __model__ = "tasks"  # Binds this schema domain
+    
+    id: uuid.UUID
+    title: str
+    salary: float
+    assignee: AssigneeInfo | None = None
+```
+
+### Supported Path Resolution Syntax
+
+* **Action-Scoped Restrictions:** If `ctx.restricted_fields` contains `"tasks.view.salary"`, `Zchema` strips `salary` strictly on `view` (GET) operations.
+* **Global Domain Restrictions:** If `restricted_fields` contains `"tasks.salary"`, `Zchema` strips `salary` across all actions (create, update, view).
+* **Recursive Nested Restrictions:** If `restricted_fields` contains `"tasks.view.assignee.email"`, `Zchema` traverses the nested `assignee` dictionary/list and prunes only the `email` key.
+* **Full-Model Masking (Wildcard):** If `restricted_fields` contains `"tasks.view"` or `"tasks"`, `Zchema` prunes the entire model (`*`), returning an empty representation.
+
+<Callout type="info" emoji="🛣️">
+  **Action Context:** `ZCoreAPIRoute` automatically populates `ctx.set("action", "view" | "create" | "update" | "delete")` based on the active HTTP method or custom OpenAPI route metadata.
+</Callout>
+
+---
+
+## 3. `ZCoreAPIRoute` Integration & CDN Safety
+
+To orchestrate `Zchema` seamlessly with FastAPI, ZCore provides the specialized **`ZCoreAPIRoute`**:
+
+### Fast Dynamic Schema Queries (`?schema=true`)
+When a client requests `GET /tasks?schema=true`:
+1. `ZCoreAPIRoute` intercepts the connection before route handlers or database sessions are invoked.
+2. It executes `target_model.model_json_schema()`, triggering `Zchema`'s masked schema generation.
+3. It returns the pruned JSON Schema wrapped in `ResponseWrapper` directly, bypassing the database entirely.
+
+### Automatic HTTP Cache Invalidation (`Vary` Header)
+If an endpoint returns data where restricted fields have been pruned, `ZCoreAPIRoute` automatically appends:
+
+```http
+Vary: Authorization, Cookie
+```
+
+This prevents downstream CDNs, reverse proxies, and browser caches from serving masked responses to high-privilege administrative users.

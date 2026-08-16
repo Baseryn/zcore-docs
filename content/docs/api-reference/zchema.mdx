@@ -1,0 +1,74 @@
+---
+title: Zchema (Schema Projection)
+description: API reference for the Zchema base class used for dynamic, role-based field pruning and context shielding.
+icon: ShieldCheck
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`Zchema` inherits directly from Pydantic V2 `BaseModel`. It acts as the unified, domain-aware security schema base class. It intercepts Pydantic's core lifecycle hooks to dynamically prune restricted fields based on the active user's execution context.
+
+## Class Definition
+
+```python
+from pydantic import BaseModel
+from typing import ClassVar, Optional
+from zcore import Zchema
+
+class Zchema(BaseModel):
+    __model__: ClassVar[Optional[str]] = None
+```
+
+---
+
+## Class Attributes
+
+<TypeTable
+  type={{
+    __model__: {
+      type: 'ClassVar[Optional[str]]',
+      default: 'None',
+      description: 'The database table or domain name this schema represents (e.g., "tasks"). Used to match and extract relative paths from ctx.restricted_fields.',
+    }
+  }}
+/>
+
+---
+
+## How Context Shielding Works
+
+`Zchema` automatically interacts with the global `ctx` object. When a user authenticates, their restricted field paths (e.g., `"tasks.view.salary"` or `"tasks.create.is_admin"`) are loaded into `ctx.restricted_fields`.
+
+<Callout type="info" emoji="🛡️">
+  **Triple Pruning Pipeline:**
+  1. **Input Validation (Mass Assignment Defense):** Silently drops restricted fields from input payloads before validation occurs.
+  2. **Output Serialization (Data Leakage Defense):** Recursively removes restricted attributes from the dictionary payload before rendering to JSON.
+  3. **JSON Schema Generation (OpenAPI Masking):** Modifies the generated Pydantic schema on the fly, removing restricted keys from both `properties` and `required` definitions.
+</Callout>
+
+---
+
+## Internal Lifecycle Interceptors
+
+These methods are implemented internally by `Zchema` and require no manual invocation:
+
+### `filter_restricted_inputs`
+
+`@model_validator(mode="before")` — Intercepts raw input payloads before Pydantic validation begins. It computes relative restricted paths and strips unauthorized attributes from incoming dictionaries to prevent Mass Assignment attacks.
+
+### `secure_serializer`
+
+`@model_serializer(mode="wrap")` — Wraps the serialization process. It invokes the default serializer, then executes recursive pruning on the resulting dictionary before rendering to JSON.
+
+### `__get_pydantic_json_schema__`
+
+Customizes dynamic JSON Schema generation. It prunes restricted properties and cleans the `required` validation array in schema specifications generated for OpenAPI or `?schema=true` requests.
+
+### `_get_relative_restricted_paths`
+
+`@classmethod` — Extracts and normalizes restricted field paths mapped to this schema's domain (`__model__`). It evaluates action-specific rules (`tasks.view.salary`), global rules (`tasks.salary`), and wildcard model masks (`tasks.view` $\rightarrow$ `*`).
+
+### `_prune_data`
+
+`@classmethod` — Recursively traverses nested dictionaries and lists of dictionaries to strip attributes matching relative restriction dot-paths.

@@ -1,0 +1,154 @@
+---
+title: Settings & Configuration
+description: API reference for the Pydantic V2 Settings module, SettingsProxy lazy loader, and environment initializers.
+icon: Cog
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `Settings` class parses and validates environment variables and file-based sources (`.env`). It integrates directly with ZCore's IoC container to support singleton management and provides a dynamic proxy for lazy resolution.
+
+## Class Definition
+
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from zcore.config import Settings
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=os.getenv("ENV_FILE", ".env"),
+        extra="ignore",
+        case_sensitive=True
+    )
+```
+
+---
+
+## Core Configuration Attributes
+
+<TypeTable
+  type={{
+    PROJECT_NAME: {
+      type: 'str',
+      default: '"ZCore Application"',
+      description: 'Human-readable title name for the project and OpenAPI documentation.',
+    },
+    DEBUG: {
+      type: 'bool',
+      default: 'True',
+      description: 'Boolean flag indicating whether the application runs in debug mode (affects logging and fail-fast checks).',
+    },
+    DATABASE_URL: {
+      type: 'str',
+      default: '"sqlite+aiosqlite:///zcore.db"',
+      description: 'Primary relational database async connection URI.',
+    },
+    DATABASE_TEST_URL: {
+      type: 'str',
+      default: '"sqlite+aiosqlite:///zcore_test.db"',
+      description: 'Dedicated test runner database connection URI.',
+    },
+    POOL_SIZE: {
+      type: 'int',
+      default: '5',
+      description: 'Base connection pool capacity for non-SQLite relational engines.',
+    },
+    MAX_OVERFLOW: {
+      type: 'int',
+      default: '10',
+      description: 'Maximum overflowing connections allowed beyond POOL_SIZE.',
+    },
+    SECRET_KEY: {
+      type: 'str',
+      default: '"zcore-insecure-fallback-secret-key-must-be-changed"',
+      description: 'Cryptographic secret key used for signing JWTs and hashes. Must be changed in production.',
+    },
+    ALGORITHM: {
+      type: 'str',
+      default: '"HS256"',
+      description: 'Cryptographic signing algorithm utilized for JWT generation.',
+    },
+    ACCESS_TOKEN_EXPIRE_MINUTES: {
+      type: 'int',
+      default: '30',
+      description: 'Lifespan duration for authentication access tokens in minutes.',
+    },
+    REFRESH_TOKEN_EXPIRE_DAYS: {
+      type: 'int',
+      default: '7',
+      description: 'Lifespan duration for refresh tokens in days.',
+    },
+    STORAGE_PATH: {
+      type: 'str',
+      default: '"./storage"',
+      description: 'Local filesystem base directory path reserved for file uploads.',
+    },
+    REDIS_URL: {
+      type: 'str | None',
+      default: 'None',
+      description: 'Distributed Redis connection URI, or None for local memory caching and streaming.',
+    }
+  }}
+/>
+
+---
+
+## The Settings Proxy (Lazy Resolution)
+
+ZCore exposes a global `settings` object via `SettingsProxy`:
+
+```python
+from zcore import settings
+```
+
+<Callout type="info" emoji="⚙️">
+  **Lazy Resolution Architecture:** When you import `settings`, you are importing a dynamic `SettingsProxy` object. Configuration lookups are resolved against the active registered `Settings` singleton **only when an attribute is accessed**. This eliminates circular import errors and prevents premature database pool instantiation during module loading.
+</Callout>
+
+---
+
+## Helper Functions
+
+### `initialize_settings`
+
+Registers a settings instance (or custom subclass) into the IoC container as a Singleton. If a subclass is provided, it binds both the subclass and the base `Settings` interface.
+
+```python
+from zcore.config import initialize_settings
+
+initialize_settings(AppSettings())
+```
+
+<TypeTable
+  type={{
+    settings_inst: {
+      type: 'Settings',
+      description: 'An instance of Settings (or its subclass) to bind to the global IoC container.',
+    }
+  }}
+/>
+
+### `get_settings`
+
+Resolves the active settings singleton from the IoC container. If uninitialized, it automatically instantiates and registers the specified class as a fallback.
+
+```python
+from zcore.config import get_settings
+
+active_settings = get_settings()
+```
+
+<TypeTable
+  type={{
+    settings_class: {
+      type: 'Type[T]',
+      default: 'Settings',
+      description: 'The class type of the settings to resolve.',
+    },
+    returns: {
+      type: 'T',
+      description: 'The resolved settings instance of type T.',
+    }
+  }}
+/>

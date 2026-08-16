@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "context",
+    "di",
+    "kernel",
+    "search",
+    "uow",
+    "zchema",
+    "security",
+    "cache-and-streams",
+    "testing",
+    "storage",
+    "cli-and-logging"
+  ]
+}

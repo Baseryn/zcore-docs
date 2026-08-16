@@ -1,0 +1,25 @@
+---
+title: How to use CLI commands
+description: Master the ZCore CLI for scaffolding and environment management.
+icon: Terminal
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `zc` CLI tool accelerates project setup, domain scaffolding, and environment variable generation.
+
+### Available Commands
+
+| Command | Purpose | Flags / Options |
+|---|---|---|
+| `zc init <name>` | Scaffolds a new FastAPI + ZCore project directory. | — |
+| `zc startapp <name>` | Creates a modular domain/plugin folder inside your project. | `-t, --template` (Boilerplate)<br/>`--test` (Generate test file) |
+| `zc run` | Starts the Uvicorn dev server (reads `HOST` & `PORT` from `.env`). Automatically enables `--reload`| — |
+| `zc gensecret` | Generates a 64-char cryptographically secure hex secret key. | — |
+| `zc genenv` | Introspects the registered `Settings` class and generates a `.env` template. | `-o, --output` (Default: `.env.example`)<br/>`-f, --force` (Overwrite file) |
+| `zc --version` | Displays the active ZCore Framework version. | — |
+
+<Callout type="warn" emoji="⚠️">
+  **Never commit actual `.env` files:**
+  Always run `zc genenv` and commit the generated `.env.example` file to your Git repository. Keep your real `.env` file listed in `.gitignore` with secrets secured.
+</Callout>

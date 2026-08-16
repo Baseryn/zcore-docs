@@ -1,0 +1,23 @@
+{
+  "pages": [
+    "extend-settings",
+    "use-cli-commands",
+    "wire-dependencies",
+    "register-singleton-vs-scoped",
+    "override-repository",
+    "use-scope-query",
+    "implement-cursor-pagination",
+    "build-complex-search",
+    "use-pre-post-hooks",
+    "use-unit-of-work",
+    "listen-to-events",
+    "handle-custom-exceptions",
+    "mask-sensitive-fields",
+    "expose-dynamic-schemas",
+    "enforce-permission-scopes",
+    "upload-files-securely",
+    "cache-database-queries",
+    "test-endpoints",
+    "mock-users-in-tests"
+  ]
+}

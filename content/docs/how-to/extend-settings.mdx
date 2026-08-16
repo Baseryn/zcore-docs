@@ -1,0 +1,59 @@
+---
+title: How to extend the Settings class
+description: Add custom environment variables to your ZCore application securely.
+icon: Settings
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore uses Pydantic v2 for settings management. To introduce your own configuration variables (e.g., `AWS_BUCKET`, `REDIS_PASSWORD`), simply extend the core `Settings` class.
+
+<Callout type="info" emoji="💡">
+  **Circular-Dependency Safe:** ZCore's exported `settings` object is a dynamic `SettingsProxy`. You can import and access it anywhere across your application without triggering premature evaluation or circular import errors.
+</Callout>
+
+<Steps>
+  <Step>
+    ### Define and Register Custom Settings in `main.py`
+
+    At the very top of your `main.py` (before initializing the database and Kernel), define your `AppSettings` subclass and pass its instance to `initialize_settings`:
+
+    ```python
+    # main.py
+    from zcore.config import Settings, initialize_settings
+
+    class AppSettings(Settings):
+        AWS_BUCKET: str = "default-bucket"
+        MAX_RETRIES: int = 3
+
+    # Register your custom settings singleton into ZCore's IoC container at startup
+    initialize_settings(AppSettings())
+
+    # --- Continue with your standard main.py setup ---
+    from fastapi import FastAPI
+    from zcore import Kernel, settings, db_manager
+    # ...
+    ```
+  </Step>
+
+  <Step>
+    ### Access Settings Anywhere
+
+    Import the global `settings` proxy directly from `zcore` inside any router, service, or plugin:
+
+    ```python
+    # any_service.py or any_router.py
+    from zcore import settings
+
+    def connect_aws():
+        bucket = settings.AWS_BUCKET
+        retries = settings.MAX_RETRIES
+        print(f"Connecting to {bucket} with {retries} retries...")
+    ```
+  </Step>
+</Steps>
+
+<Callout type="success" emoji="⚡">
+  **CLI Integration:** Once you declare `AppSettings` in `main.py`, running `zc genenv` in your terminal will automatically inspect your subclass and scaffold a `.env.example` file containing your newly declared variables!
+</Callout>

@@ -1,0 +1,472 @@
+---
+title: BaseRepository
+description: Comprehensive API reference for the BaseRepository class, query scoping, and its Mixins.
+icon: Database
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`BaseRepository` provides standard asynchronous database access, combining Read, Write, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions and enforces context security through model-level query scoping.
+
+## Class Definition
+
+```python
+from zcore import BaseRepository
+
+class BaseRepository(
+    Generic[ModelType],
+    ReadRepositoryMixin[ModelType],
+    WriteRepositoryMixin[ModelType],
+    SearchRepositoryMixin[ModelType]
+):
+    def __init__(self, model: Type[ModelType], db: AsyncSession):
+        ...
+```
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    db: {
+      type: 'AsyncSession',
+      description: 'The active asynchronous database session.',
+    },
+    model: {
+      type: 'Type[ModelType]',
+      description: 'The SQLAlchemy declarative model class bound to the repository.',
+    },
+    pk: {
+      type: 'Any',
+      description: 'The SQLAlchemy primary key column representation of the bound model.',
+    },
+    pk_name: {
+      type: 'str',
+      description: 'The string identifier name of the primary key field (e.g., "id").',
+    },
+    cursor_field: {
+      type: 'str',
+      default: 'self.pk_name',
+      description: 'The model field used to coordinate boundary coordinates during keyset cursor pagination.',
+    }
+  }}
+/>
+
+---
+
+## Query Scoping & Multi-Tenancy (`_get_base_query`)
+
+`BaseRepository` constructs its initial `SELECT` statements via `_get_base_query()`. 
+
+If your SQLAlchemy model declares a classmethod named **`scope_query`**, `_get_base_query()` passes the query statement through this hook before applying any route-level filters:
+
+```python
+# Internal mechanics in BaseRepository
+def _get_base_query(self) -> Select:
+    query = select(self.model)
+    scoper = getattr(self.model, "scope_query", None)
+    if scoper:
+        return scoper(query)
+    return query
+```
+
+<Callout type="info" emoji="💡">
+  **Model Hook Signature:**
+  ```python
+  @classmethod
+  def scope_query(cls, query: Select) -> Select:
+      # Apply global row-level security or tenant isolation
+      return query.where(cls.tenant_id == ctx.get("tenant_id"))
+  ```
+</Callout>
+
+---
+
+## Read Methods
+
+### `get`
+
+Fetches a single model instance matching dynamic criteria.
+
+```python
+async def get(
+    self, 
+    *criterion: Any, 
+    fields: Optional[List[Any]] = None, 
+    options: Optional[List[ExecutableOption]] = None,
+    **filters: Any
+) -> Optional[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    '*criterion': {
+      type: 'Any',
+      description: 'Positional binary SQLAlchemy filter expressions (e.g., Task.status == "active").',
+    },
+    fields: {
+      type: 'List[Any] | None',
+      default: 'None',
+      description: 'Specific entity attributes to selectively load (load_only).',
+    },
+    options: {
+      type: 'List[ExecutableOption] | None',
+      default: 'None',
+      description: 'SQLAlchemy execution/loader options (e.g., joinedload, selectinload).',
+    },
+    '**filters': {
+      type: 'Any',
+      description: 'Keyword arguments for standard equality filters (e.g., is_completed=True).',
+    },
+    returns: {
+      type: 'ModelType | None',
+      description: 'The retrieved database model instance, or None if not found.',
+    }
+  }}
+/>
+
+### `get_by_ids`
+
+Fetches a sequence of records matching a list of primary keys.
+
+```python
+async def get_by_ids(
+    self, 
+    ids: List[Any], 
+    fields: Optional[List[Any]] = None, 
+    options: Optional[List[ExecutableOption]] = None
+) -> Sequence[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    ids: {
+      type: 'List[Any]',
+      description: 'A list of primary key values to retrieve.',
+    },
+    fields: {
+      type: 'List[Any] | None',
+      default: 'None',
+      description: 'Specific entity attributes to selectively load.',
+    },
+    options: {
+      type: 'List[ExecutableOption] | None',
+      default: 'None',
+      description: 'SQLAlchemy execution options.',
+    },
+    returns: {
+      type: 'Sequence[ModelType]',
+      description: 'A sequence of retrieved database model instances.',
+    }
+  }}
+/>
+
+### `get_list`
+
+Fetches a paginated or complete listing of records.
+
+```python
+async def get_list(
+    self, 
+    pagination: Any = None, 
+    fields: Optional[List[Any]] = None, 
+    options: Optional[List[ExecutableOption]] = None,
+    *criterion: Any,
+    **filters: Any
+) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    pagination: {
+      type: 'PageNumberParams | CursorParams | None',
+      default: 'None',
+      description: 'Pagination parameter schema. If None, returns all unpaginated records.',
+    },
+    fields: {
+      type: 'List[Any] | None',
+      default: 'None',
+      description: 'Specific entity attributes to selectively load.',
+    },
+    options: {
+      type: 'List[ExecutableOption] | None',
+      default: 'None',
+      description: 'SQLAlchemy execution loader options.',
+    },
+    '*criterion': {
+      type: 'Any',
+      description: 'Positional binary SQLAlchemy filter expressions.',
+    },
+    '**filters': {
+      type: 'Any',
+      description: 'Keyword key-value arguments for equality filters.',
+    },
+    returns: {
+      type: 'Sequence[ModelType] | PaginatedResult[ModelType]',
+      description: 'A list of matching records or a PaginatedResult container.',
+    }
+  }}
+/>
+
+### `exist`
+
+Checks if records matching the filters exist in the database.
+
+```python
+async def exist(self, *criterion: Any, **filters: Any) -> bool: ...
+```
+
+<TypeTable
+  type={{
+    '*criterion': {
+      type: 'Any',
+      description: 'Positional binary SQLAlchemy filter expressions.',
+    },
+    '**filters': {
+      type: 'Any',
+      description: 'Keyword arguments for standard equality filters.',
+    },
+    returns: {
+      type: 'bool',
+      description: 'True if matching records exist, False otherwise.',
+    }
+  }}
+/>
+
+### `count`
+
+Counts records matching dynamic criteria.
+
+```python
+async def count(self, *criterion: Any, **filters: Any) -> int: ...
+```
+
+<TypeTable
+  type={{
+    '*criterion': {
+      type: 'Any',
+      description: 'Positional binary SQLAlchemy filter expressions.',
+    },
+    '**filters': {
+      type: 'Any',
+      description: 'Keyword arguments for standard equality filters.',
+    },
+    returns: {
+      type: 'int',
+      description: 'The total volume of matching records.',
+    }
+  }}
+/>
+
+---
+
+## Write Methods
+
+### `create`
+
+Creates and persists a single record from a Pydantic schema.
+
+```python
+async def create(self, schema: BaseModel, **extra_data: Any) -> ModelType: ...
+```
+
+<TypeTable
+  type={{
+    schema: {
+      type: 'BaseModel',
+      description: 'Validated Pydantic schema containing properties for the new record.',
+    },
+    '**extra_data': {
+      type: 'Any',
+      description: 'Dynamic fields to merge into the payload before database insertion.',
+    },
+    returns: {
+      type: 'ModelType',
+      description: 'The created and refreshed database model instance.',
+    }
+  }}
+/>
+
+### `create_multi`
+
+Creates multiple records in a single batch.
+
+```python
+async def create_multi(
+    self, 
+    schemas: List[BaseModel], 
+    refresh: bool = False
+) -> Sequence[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    schemas: {
+      type: 'List[BaseModel]',
+      description: 'A list of Pydantic schemas representing the new database objects.',
+    },
+    refresh: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, refreshes each created record individually after flush.',
+    },
+    returns: {
+      type: 'Sequence[ModelType]',
+      description: 'A sequence of created database model instances.',
+    }
+  }}
+/>
+
+### `update`
+
+Updates an existing record by primary key.
+
+```python
+async def update(
+    self, 
+    id: Any, 
+    schema: BaseModel, 
+    partial: bool = False, 
+    **extra_data: Any
+) -> Optional[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    id: {
+      type: 'Any',
+      description: 'The primary key identifier of the target record to update.',
+    },
+    schema: {
+      type: 'BaseModel',
+      description: 'The Pydantic update schema containing modified parameters.',
+    },
+    partial: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, applies modifications as a PATCH (ignoring unset fields).',
+    },
+    '**extra_data': {
+      type: 'Any',
+      description: 'Dynamic fields to merge into the update payload.',
+    },
+    returns: {
+      type: 'ModelType | None',
+      description: 'The updated and refreshed model instance, or None if not found.',
+    }
+  }}
+/>
+
+### `update_multi`
+
+Batch updates multiple database records mapped by their primary keys.
+
+```python
+async def update_multi(
+    self, 
+    data: dict[Any, BaseModel], 
+    partial: bool = False, 
+    refresh: bool = False
+) -> Sequence[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    data: {
+      type: 'dict[Any, BaseModel]',
+      description: 'A dictionary mapping target primary keys to their respective update schemas.',
+    },
+    partial: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, fields omitted in the schema payload are skipped.',
+    },
+    refresh: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, refreshes instance attributes from the database after flush.',
+    },
+    returns: {
+      type: 'Sequence[ModelType]',
+      description: 'A sequence containing the updated database model instances.',
+    }
+  }}
+/>
+
+### `delete`
+
+Deletes a single record by its primary key.
+
+```python
+async def delete(self, id: Any) -> Optional[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    id: {
+      type: 'Any',
+      description: 'The primary key value of the target record to delete.',
+    },
+    returns: {
+      type: 'ModelType | None',
+      description: 'The deleted database model instance, or None if not found.',
+    }
+  }}
+/>
+
+### `delete_multi`
+
+Deletes multiple records matching a list of primary keys.
+
+```python
+async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    ids: {
+      type: 'List[Any]',
+      description: 'A list of primary key values of records to delete.',
+    },
+    returns: {
+      type: 'Sequence[ModelType]',
+      description: 'A sequence containing the deleted database model instances.',
+    }
+  }}
+/>
+
+---
+
+## Search Methods
+
+### `search`
+
+Dynamically parses and executes a structured `SearchRequest`.
+
+```python
+async def search(
+    self, 
+    search_in: SearchRequest, 
+    pagination: Any = None
+) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    search_in: {
+      type: 'SearchRequest',
+      description: 'The dynamic search parameter model containing filters, includes, and sorting.',
+    },
+    pagination: {
+      type: 'PageNumberParams | CursorParams | None',
+      default: 'None',
+      description: 'Pagination settings to apply to search results.',
+    },
+    returns: {
+      type: 'Sequence[ModelType] | PaginatedResult[ModelType]',
+      description: 'A paginated result wrapper or a list of matched models.',
+    }
+  }}
+/>

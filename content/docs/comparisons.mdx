@@ -1,0 +1,191 @@
+---
+title: Comparisons
+description: Honest architectural comparisons with plain FastAPI, Django, and other tools. ZCore is not a replacement — it is a composable alternative.
+icon: Scale
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+Choosing the right architectural pattern directly impacts the maintainability of your codebase. ZCore is not designed to be a universal winner; it is a composable, opt-in layer designed for specific scaling patterns. 
+
+This page provides an objective, technical comparison to help you determine which paradigm fits your current system architecture.
+
+<Callout type="info" emoji="⚖️">
+  **Evaluation Rule:** Every tool evaluated below is highly optimized for its specific target workflow. Choose the tool that aligns with your scaling requirements, rather than adopting abstractions prematurely.
+</Callout>
+
+---
+
+## ZCore vs. Plain FastAPI
+
+ZCore does not replace FastAPI; it runs alongside it to address common boilerplate patterns.
+
+| Architectural Decision | Plain FastAPI | ZCore |
+|---|---|---|
+| **Underlying Engine** | Standard ASGI Web Framework | Standard ASGI Web Framework + Composable Utilities |
+| **Design Philosophy** | Minimalist, highly explicit | Minimalist, with optional architectural abstractions |
+| **Data Access (CRUD)** | Manual SQL or ORM execution per route | Automated inheritance via `BaseRepository` (fully overridable) |
+| **Dependency Injection** | Nested, parameter-level `Depends()` chains | Clean constructor auto-wiring via `Inject[T]` and `IoCContainer` |
+| **Field-Level Security** | Multiple separate Pydantic output schemas | Dynamic, role-based field pruning inside a single `Zchema` |
+| **Transactional Boundaries** | Manual `session.commit()` execution | Context-manager encapsulation via `UnitOfWork` |
+| **Module Organization** | Undefined (User-driven) | Structured, topologically sorted domain modules (`Plugin`) |
+| **Learning Curve** | Standard FastAPI | FastAPI + minimal overhead per adopted ZCore module |
+
+### When to choose plain FastAPI
+
+*   Your application has a small domain model (1–3 tables) with simple, unique queries.
+*   You prefer explicit, inline code and want to avoid introducing any class-level abstractions.
+*   You have no requirements for complex, role-based data masking or dynamic schema generation.
+*   You are prototyping and want zero architectural layers between your database sessions and routes.
+
+### When ZCore adds value
+
+*   Your application is expanding, and you are writing identical CRUD operations for the 4th or 5th model.
+*   You need to dynamically prune sensitive attributes (like `email` or `salary`) from responses based on active scopes, without maintaining multiple duplicate Pydantic models.
+*   You must coordinate multiple database writes atomically while ensuring that side-effect events only publish once the database commit succeeds.
+*   You want to separate transactional operations and business rules from the web controller layer.
+
+```python
+# You can mix both paradigms seamlessly in the same file
+from fastapi import APIRouter
+from zcore import BaseRepository, Inject, SessionDep
+from .models import Task
+
+class TaskRepo(BaseRepository[Task]):
+    pass  # This route layer uses ZCore's BaseRepository
+
+router = APIRouter()
+
+# This route remains a standard, native FastAPI controller
+# SessionDep is ZCore's Annotated[AsyncSession, Depends(get_db)]
+@router.get("/health")
+async def health_check(db: SessionDep):
+    return {"status": "healthy"}
+```
+
+---
+
+## ZCore vs. Django / Django REST Framework
+
+These frameworks solve fundamentally different architectural problems. Django is a batteries-included monolith, whereas ZCore is a composable architectural extension for FastAPI.
+
+| Feature Boundary | Django + DRF | ZCore |
+|---|---|---|
+| **Architecture Style** | Monolithic, opinionated | Composable, modular, opt-in layers |
+| **Asynchronous Execution** | Historically synchronous, with partial async adaptations | Native, fully asynchronous from the ground up (FastAPI + SQLAlchemy Async) |
+| **Data Mapping (ORM)** | Django ORM (tightly coupled and required) | Standard SQLAlchemy 2.0 Async (fully decoupled) |
+| **Administration Portal** | Built-in, automated admin panel | None (on the roadmap) |
+| **User Authentication** | Built-in authentication model, session management, and UI | Decoupled `BaseAuth` token decoding and `ZContext` injection |
+| **Database Migrations** | Built-in migration engine | Native integration with Alembic |
+| **API Abstractions** | Class-Based Views (CBVs) and Serializers | Standard Pydantic models and functional FastAPI controllers |
+
+### When Django is the optimal choice
+
+*   You are building a standard, monolithic web application (API + admin portal + HTML templates).
+*   Your project requires a fully-featured, out-of-the-box admin dashboard immediately.
+*   Your team is highly productive within the Django ecosystem and prefers built-in, non-negotiable standards.
+*   You do not require high-performance, fully asynchronous execution across the entire transaction lifecycle.
+
+### When ZCore is the optimal choice
+
+*   You are building an API-first service optimized for high-throughput, async operation.
+*   You want to leverage SQLAlchemy 2.0's advanced query capabilities directly without ORM-level lock-in.
+*   You prefer composing your own modular abstractions over inheriting a monolithic framework.
+*   You want to avoid class-based views in favor of explicit, lightweight FastAPI endpoints.
+
+---
+
+## ZCore vs. FastAPI-Users
+
+`FastAPI-Users` is a dedicated library for comprehensive user authentication, while ZCore's `BaseAuth` is an abstract helper designed to bind authentication state to the active context.
+
+| Feature | FastAPI-Users | ZCore (`BaseAuth`) |
+|---|---|---|
+| **Primary Focus** | Complete out-of-the-box user registration and management | Contextual authentication and scope-based security binding |
+| **Auth Flows** | Registration, verification, password reset, OAuth logins | JWT decoding, Argon2id hashing, and signature validation |
+| **Password Hashing** | Typically Bcrypt | Argon2id (Default, highly secure winner of PHC) |
+| **User Schema & Model** | Enforced user and database schema templates | Bring Your Own User Model (BYOUM) matching `UserProtocol` |
+| **Database Coupling** | Tightly coupled to database adapters (SQLAlchemy/Beanie) | Completely decoupled; relies on standard repository interfaces |
+| **Scope of Utilities** | Authentication only | Full architectural stack (Repository, Service, Zchema, UoW) |
+
+### When FastAPI-Users is better
+
+*   You need a complete, turn-key authentication system, including email verification, password reset, and registration endpoints, with minimal manual coding.
+*   You do not want to design or write user database structures.
+
+### When ZCore's BaseAuth is better
+
+*   You already have an established user model and database strategy and simply need to integrate JWT claims with your request pipeline.
+*   You want to seamlessly bind user permissions to `ZContext.restricted_fields` to drive ZCore's automated `Zchema` field-pruning serialization.
+*   You prefer custom, lightweight authentication callbacks over relying on a third-party user-management engine.
+
+---
+
+## ZCore vs. Standalone SQLAlchemy 2.0
+
+ZCore does not replace SQLAlchemy; it builds on top of it. However, it is important to understand the level of abstraction introduced by `BaseRepository` and `SearchEngine`.
+
+| Query Feature | Standalone SQLAlchemy | ZCore's `BaseRepository` |
+|---|---|---|
+| **Data Retrieval** | `session.execute(select(Model).where(...))` | `repo.get(id=id)` |
+| **Database Session** | Managed manually | Injected automatically or scoped via UoW |
+| **Keyset Pagination** | Written manually per query | Built-in via `CursorPagination` and `CursorParams` |
+| **Dynamic Search** | Hand-crafted filter parsing | Automated SQL compilation from `SearchRequest` payloads |
+| **Search Security** | Manual validation required | Built-in depth limits and restricted field checking |
+| **Execution Hooks** | Hand-written or mapped via event listeners | Overridable `pre_create`, `post_delete` service lifecycle hooks |
+
+### When to use SQLAlchemy directly
+
+*   Your data-access patterns are unique, highly complex, or rely on window functions, CTEs, and heavy raw SQL queries.
+*   Your application has very few repetitive queries, making generic repository abstractions unnecessary.
+*   You are learning SQLAlchemy and prefer explicit query compilation for full transparency.
+
+### When BaseRepository helps
+
+*   You have multiple domain models sharing standard CRUD operations.
+*   You need consistent, highly performant keyset (cursor) pagination across your API without writing manual window filters for every model.
+*   You want to expose a structured search and filtering endpoint without manually parsing query parameters for every column.
+
+<Callout type="info" emoji="🔄">
+  **No Obscurity:** `BaseRepository` does not wrap or obscure SQLAlchemy sessions. It executes standard async SQLAlchemy statements internally. You can override any method to write custom SQL queries whenever the default CRUD patterns fall short.
+</Callout>
+
+---
+
+## Guided Decision Path
+
+Follow this step-by-step logic to determine the appropriate stack for your project:
+
+```
+1. Does your application require a monolithic setup with a built-in admin panel and HTML templates?
+   ├── Yes ──> Use Django / Django REST Framework
+   └── No  ──> Use FastAPI
+
+2. Is your FastAPI application small (1-3 models) with simple database operations?
+   ├── Yes ──> Plain FastAPI is highly sufficient. Keep it explicit and simple.
+   └── No  ──> Proceed to question 3
+
+3. Are you writing repetitive CRUD queries and managing redundant schemas for different roles?
+   ├── Yes ──> Adopt ZCore (BaseRepository + Zchema) to unify operations.
+   └── No  ──> Evaluate specific utilities:
+               ├── Need constructor dependency injection? ──> Adopt Inject[T]
+               ├── Need atomic writes & isolated events?  ──> Adopt UnitOfWork
+               └── Otherwise ───────────────────────────────> Stick to plain FastAPI
+```
+
+---
+
+## Where ZCore Introduces Trade-offs
+
+A balanced architecture means acknowledging that every abstraction carries a cost:
+
+| ZCore Component | Introduced Overhead | When the abstraction is unnecessary |
+|---|---|---|
+| **`BaseRepository`** | Introduces an extra class layer per model. | Your database queries are unique, highly custom, or rarely repeat. |
+| **`BaseService`** | Requires learning the pre/post-action hook lifecycle. | Your business logic is simple enough to reside cleanly within route controllers. |
+| **`Zchema`** | Requires model metadata configuration and scope mappings. | Your API does not serve different user roles or have field-level visibility constraints. |
+| **`UnitOfWork`** | Introduces context manager encapsulation for database sessions. | Your API writes only to single tables within single requests. |
+| **`BaseRouter`** | Generates 7 standard endpoints which must be configured or excluded. | You only need 1 or 2 specific endpoints for a given model. |
+| **`Inject[T]`** | Requires understanding container lifecycles (Singleton, Scoped, Transient). | Standard FastAPI `Depends()` parameters meet your modular requirements. |

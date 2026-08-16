@@ -2,11 +2,21 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 
-html {
-  scrollbar-gutter: stable;
+
+@theme {
+  --color-fd-primary: hsl(160 84% 39%);
+  --color-fd-primary-foreground: hsl(0 0% 98%);
 }
 
-html > body[data-scroll-locked] {
-  margin-right: 0px !important;
-  --removed-body-scroll-bar-size: 0px !important;
+.dark {
+  --color-fd-primary: hsl(158, 64%, 44%);
+  --color-fd-primary-foreground: hsl(0 0% 10%);
+}
+
+/* Fumadocs sidebar */
+
+#nd-sidebar > div {
+  padding-left: 12px;
+  padding-right: 12px;
+  width: 100%;
 }

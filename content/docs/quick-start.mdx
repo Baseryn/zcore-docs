@@ -1,0 +1,458 @@
+---
+title: Quick Start
+description: From pip install to running API in 60 seconds. Add ZCore pieces only where they help.
+icon: Rocket
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { File, Folder, Files } from 'fumadocs-ui/components/files';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+**Every step below is optional.** ZCore is designed to be an incremental, opt-in companion for FastAPI. This guide demonstrates the fastest integration path. Feel free to skip any component that does not suit your project's architectural requirements.
+
+---
+
+## 1. Install
+
+```bash
+pip install fastapi-zcore-framework[all]
+```
+
+ZCore extends FastAPI by providing modular helper patterns — it does not hide or replace standard FastAPI structures.
+
+---
+
+## 2. Scaffold a Project
+
+Use the built-in CLI tool to quickly bootstrap a clean, modular starting structure:
+
+```bash
+zc init my_api && cd my_api
+```
+
+This command generates a minimal layout:
+
+<Files>
+  <Folder name="my_api" defaultOpen>
+    <File name="main.py" />
+    <File name=".env" />
+    <File name="requirements.txt" />
+  </Folder>
+</Files>
+
+`main.py` is a standard FastAPI entrypoint. ZCore does not introduce hidden magic; you retain absolute control over the FastAPI application instance.
+
+---
+
+## 3. Create an App Module (Domain)
+
+ZCore projects are organized as decoupled, modular domains. Let's scaffold a `tasks` domain:
+
+```bash
+zc startapp tasks --template
+```
+
+This command generates a structured, independent directory layout for your domain directly in the root directory:
+
+<Files>
+  <Folder name="my_api" defaultOpen>
+    <Folder name="tasks" defaultOpen>
+      <File name="models.py" />
+      <File name="schemas.py" />
+      <File name="repositories.py" />
+      <File name="services.py" />
+      <File name="routers.py" />
+      <File name="plugin.py" />
+    </Folder>
+    <File name="main.py" />
+    <File name=".env" />
+    <File name="requirements.txt" />
+  </Folder>
+</Files>
+
+---
+
+## 4. Define a Model & Schemas
+
+Open the auto-generated `tasks/models.py` file and customize your standard SQLAlchemy 2.0 model:
+
+```python
+# tasks/models.py
+import uuid
+from zcore import Base
+from sqlalchemy.orm import Mapped, mapped_column
+
+class Tasks(Base):
+    __tablename__ = "tasks"
+    
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str]
+    is_completed: Mapped[bool] = mapped_column(default=False)
+```
+
+Let's also define the basic schemas in `tasks/schemas.py` that we will use later:
+
+```python
+# tasks/schemas.py
+import uuid
+from zcore import Zchema
+from pydantic import ConfigDict
+
+class TasksCreate(Zchema):
+    __model__ = "tasks"
+    title: str
+    is_completed: bool = False
+
+class TasksUpdate(Zchema):
+    __model__ = "tasks"
+    title: str | None = None
+    is_completed: bool | None = None
+
+class TasksResponse(Zchema):
+    __model__ = "tasks"
+    id: uuid.UUID
+    title: str
+    is_completed: bool
+    model_config = ConfigDict(from_attributes=True)
+```
+
+At this stage, you have a normal declarative model. You can stop right here and write raw SQLAlchemy queries using `AsyncSession`. 
+**Or** read on to see how ZCore can optionally reduce your boilerplate.
+
+---
+
+## 5. Register the Plugin
+
+For the `Kernel` to recognize your domain and attach its routes to the FastAPI application, you must register the generated `Plugin` inside your `main.py` file.
+
+Open `main.py` and add the following lines before `kernel.setup(app)`:
+
+```python
+# main.py
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from fastapi import FastAPI
+from zcore import Kernel, settings
+from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
+from zcore.exceptions import app_exception_handler, AppException
+from zcore.db import db_manager, register_db_event_dispatcher
+from zcore.logging import setup_logging
+
+# Import your domain plugin
+from tasks.plugin import TasksPlugin # <--- ADD THIS
+
+setup_logging()
+db_manager.init_app(
+    db_url=settings.DATABASE_URL,
+    pool_size=settings.POOL_SIZE,
+    max_overflow=settings.MAX_OVERFLOW,
+    echo=(settings.DEBUG)
+)
+
+kernel = Kernel()
+register_db_event_dispatcher(kernel.dispatcher)
+
+# Register the plugin
+kernel.add_plugin(TasksPlugin()) # <--- ADD THIS
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    lifespan=kernel.lifespan
+)
+kernel.setup(app)
+
+app.add_middleware(RequestLogMiddleware)
+app.add_middleware(ScopedDependencyMiddleware)
+app.add_exception_handler(AppException, app_exception_handler)
+
+@app.get("/")
+async def root():
+    return {"status": "healthy", "framework": "ZCore"}
+```
+
+---
+
+## 6. Initialize the Database & Run
+
+<Callout type="warning" title="Database Tables">
+  ZCore configures the SQLAlchemy engine automatically, but it does not implicitly run migrations. Before starting the server for the first time, ensure your tables are created.
+</Callout>
+
+Now, start the development server with standard environment variable resolution:
+
+```bash
+zc run
+```
+
+Your API is live at **http://127.0.0.1:8000**. 
+
+If you navigate to `http://127.0.0.1:8000/docs`, you will see the standard FastAPI Swagger UI. Since we haven't added `BaseRouter` yet, no CRUD endpoints exist. Let's incrementally adopt ZCore features — **only the ones you actually need**.
+
+---
+
+## Now Add ZCore (Optional)
+
+Each layer is decoupled. You can pick any single component without being forced to adopt the rest.
+
+<Tabs items={['BaseRouter', 'BaseRepository', 'BaseService', 'Zchema', 'UnitOfWork', 'Skip all']}>
+<Tab value="BaseRouter">
+
+### Add Router — Auto-generated, secure endpoints
+
+<Callout type="info" emoji="🔴">
+  **Orchestrated.** Requires a Service and Repository configuration to auto-scaffold endpoints.
+</Callout>
+
+Open `tasks/routers.py` and define your router configuration:
+
+```python
+# tasks/routers.py
+from zcore import BaseRouter
+from .models import Task
+from .schemas import TasksCreate, TasksUpdate, TasksResponse
+from .services import TaskService
+
+class TasksRouter(BaseRouter[TasksCreate, TasksUpdate]):
+    model = Task
+    create_schema = TaskCreate
+    update_schema = TasksUpdate
+    schema_out = TaskResponse
+    service = TaskService
+    prefix = "/tasks" # Optional: defaults to model __tablename__
+    tags = ["Tasks"]
+```
+
+Now, open `tasks/plugin.py`. The CLI generated a basic plugin file. Ensure it includes the router:
+
+```python
+# tasks/plugin.py
+from zcore import Plugin
+from fastapi import FastAPI
+from .routers import TasksRouter
+
+class TaskPlugin(Plugin):
+    name = "tasks"
+    version = "0.1.0"
+    dependencies = []
+
+    def setup(self, app: FastAPI) -> None:
+        router_instance = TasksRouter()
+        app.include_router(router_instance.router)
+
+    async def on_startup(self):
+        pass
+
+    async def on_shutdown(self):
+        pass
+```
+
+This single class scaffolds 7 secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}`, and `POST /search`.
+
+<Callout type="info" emoji="−">
+  **Or don't.** Write standard `@router.get` and `@router.post` handlers inside your `plugin.py` setup method. You get the exact same raw FastAPI performance either way.
+</Callout>
+
+</Tab>
+
+<Tab value="BaseRepository">
+
+### Add Repository — CRUD without repetitive queries
+
+<Callout type="info" emoji="🟢">
+  **Independent.** Works completely alone. No other ZCore component or configuration is required.
+</Callout>
+
+**Before** (Standard SQLAlchemy block in route):
+
+```python
+import uuid
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+from tasks.models import Tasks
+
+@router.get("/tasks/{id}")
+async def get_task(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Tasks).where(Tasks.id == id))
+    task = result.scalars().first()
+    return task
+```
+
+**After** (Inheriting from BaseRepository in `tasks/repositories.py`):
+
+```python
+# tasks/repositories.py
+from sqlalchemy.ext.asyncio import AsyncSession
+from zcore import BaseRepository
+from .models import Tasks
+
+class TasksRepo(BaseRepository[Tasks]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(model=Tasks, db=db)
+```
+
+By simply defining this class, you gain access to 5 standard async CRUD operations, structured search filters, and cursor-based pagination.
+
+<Callout type="info" emoji="−">
+  **No lock-in:** You can bypass the repository at any time and write raw SQLAlchemy query statements directly in your routes whenever complex query logic demands it.
+</Callout>
+
+</Tab>
+
+<Tab value="BaseService">
+
+### Add Service — Orchestration with structured hooks
+
+<Callout type="info" emoji="🟡">
+  **Composable.** Pairs beautifully with BaseRepository, but works independently with any data-mapping strategy.
+</Callout>
+
+```python
+# tasks/services.py
+from typing import Any
+from zcore import BaseService, Inject
+from .models import Tasks
+from .repositories import TasksRepo
+from .schemas import TasksCreate
+
+class TaskService(BaseService[Tasks]):
+    # The repository is automatically resolved and injected by ZCore's DI container
+    def __init__(self, repo: TasksRepo):
+        super().__init__(model=Tasks, repository=repo)
+
+    async def pre_create(self, schema: TasksCreate) -> dict[str, Any] | None:
+        # Perform validation or auto-generate fields before saving
+        return {"slug": "slugified-title"}
+```
+
+Available lifecycle hooks include `pre_create`, `post_create`, `pre_update`, `post_update`, `pre_delete`, and `post_delete` to easily separate business logic from route layers.
+
+<Callout type="info" emoji="−">
+  **Or don't.** You can keep your business logic directly inside standard route functions. ZCore doesn't force a strict service layer structure.
+</Callout>
+
+</Tab>
+
+<Tab value="Zchema">
+
+### Add Zchema — Secure Projection and Dynamic Field Pruning
+
+<Callout type="info" emoji="🟡">
+  **Composable.** Integrates directly with native FastAPI route schemas to prevent Mass Assignment and data leaks.
+</Callout>
+
+**Before** (Writing multiple redundant Pydantic models):
+
+```python
+from pydantic import BaseModel
+
+class TasksPublic(BaseModel):
+    title: str
+
+class TasksInternal(BaseModel):
+    title: str
+    assignee_email: str  # Sensitive field
+```
+
+**After** (A single, role-aware Zchema as defined in Step 4):
+
+```python
+# tasks/schemas.py
+import uuid
+from zcore import Zchema
+
+class TasksResponse(Zchema):
+    __model__ = "tasks"
+    
+    id: uuid.UUID
+    title: str
+    assignee_email: str  # Automatically hidden if the active user lacks scope
+```
+
+When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. If `"tasks.assignee_email"` (or `"tasks.view.assignee_email"`) is in the restricted fields list, `Zchema` automatically intercepts serialization and prunes it from the response.
+
+<Callout type="info" emoji="−">
+  **Or don't.** You are welcome to use standard Pydantic models and define separate response schemas manually.
+</Callout>
+
+</Tab>
+
+<Tab value="UnitOfWork">
+
+### Add Unit of Work — Atomic transactions and Event Isolation
+
+<Callout type="info" emoji="🟢">
+  **Independent.** Works seamlessly with any asynchronous DB session or repository.
+</Callout>
+
+**Before** (Manual commits and early events):
+
+```python
+await repo.create(order_data)
+await repo.decrement_stock(product_id, qty)
+await db.commit() 
+# If db.commit fails, our system might have already fired side-effects
+```
+
+**After** (Safe, atomic commit block):
+
+```python
+from zcore import UnitOfWork
+
+# Coordinate database changes and delay event dispatching until commit succeeds
+async with UnitOfWork(session, dispatcher) as uow:
+    await repo.create(order_data)
+    await repo.decrement_stock(product_id, qty)
+    uow.register_event("order.placed", {"id": order_data.id})
+    # Events are only dispatched once the database transaction commits successfully
+```
+
+If any database statement fails inside the context manager, the entire transaction rolls back.
+
+<Callout type="info" emoji="−">
+  **Or don't.** Use `db.commit()` directly for basic, single-write transactions.
+</Callout>
+
+</Tab>
+
+<Tab value="Skip all">
+
+### Skip ZCore entirely
+
+You are never locked into ZCore. You can keep your project as a standard, native FastAPI structure while still benefiting from the clean settings management, structured environment file support, and scaffolding CLI.
+
+You can adopt any of ZCore's components next week, next month, or never:
+
+```python
+# Today: Native, standard FastAPI route
+from fastapi import APIRouter
+
+router = APIRouter()
+
+# Next month: Drop in a ZCore helper without refactoring existing routes
+from zcore import BaseRepository
+```
+
+No major rewrites required.
+
+</Tab>
+</Tabs>
+
+---
+
+## Architecture Summary: When to reach for ZCore
+
+| When you want to... | Use this ZCore component | Or write this natively |
+|---|---|---|
+| Stop writing repetitive CRUD queries | `BaseRepository` | Raw SQLAlchemy query executions |
+| Execute validation and hooks before/after DB writes | `BaseService` | Code inside your route functions |
+| Dynamically hide fields on a schema based on user roles | `Zchema` | Multiple separate Pydantic schemas |
+| Group database writes and isolate domain events | `UnitOfWork` | Manual `session.commit()` blocks |
+| Scaffold standard CRUD API endpoints with zero boilerplate | `BaseRouter` | Explict `@router` path functions |
+| Auto-wire service and repository dependencies | `Inject[T]` | Hand-written `Depends()` parameters |
+
+Every native pattern in the right-hand column remains 100% valid. ZCore simply streamlines your architecture when you want to write less boilerplate.

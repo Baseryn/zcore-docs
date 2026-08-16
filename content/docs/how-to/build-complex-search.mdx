@@ -1,0 +1,68 @@
+---
+title: How to build complex search queries
+description: Construct nested AND/OR filters, eager-load relations, and execute secure dynamic searches.
+icon: Funnel
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQLAlchemy queries on the fly. It is exposed automatically on the `POST /search` endpoint of any `BaseRouter`.
+
+<Steps>
+  <Step>
+    ### Supported Filter Operators
+
+    | Operator | Meaning | Example Value |
+    |---|---|---|
+    | `eq` / `ne` | Equal / Not Equal | `"active"`, `true`, `123` |
+    | `gt` / `lt` | Greater Than / Less Than | `100`, `"2026-01-01"` |
+    | `ge` / `le` | Greater/Less Than or Equal | `50`, `"2026-08-15"` |
+    | `ilike` | Case-insensitive search (auto-escaped) | `"urgent"` (searches `%urgent%`) |
+    | `in` | In a list of values | `["pending", "in_progress"]` |
+    | `is_null` | Check for `NULL` / `NOT NULL` | `true` (is null) / `false` (not null) |
+    | `and` / `or` | Logical nesting group | Array of sub-filters in `items` |
+  </Step>
+
+  <Step>
+    ### Example Search Payload
+
+    Send a `POST` request to `/tasks/search`:
+
+    ```json
+    POST /tasks/search
+    Content-Type: application/json
+
+    {
+      "filters": [
+        {
+          "op": "and",
+          "items": [
+            { "field": "is_completed", "op": "eq", "value": false },
+            { "field": "title", "op": "ilike", "value": "urgent" }
+          ]
+        },
+        { 
+          "field": "assignee.email", 
+          "op": "eq", 
+          "value": "admin@example.com" 
+        }
+      ],
+      "include": ["assignee"],
+      "sort": [
+        { "field": "created_at", "order": "desc" }
+      ],
+      "page": 1,
+      "size": 10
+    }
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🛡️">
+  **Built-In Security & Safeguards:**
+  * **Context Shielding:** If the active user has a restricted field in `ctx.restricted_fields` (e.g. `tasks.assignee.email`), any attempt to filter, sort, or include that field immediately raises a `ForbiddenError`.
+  * **SQL Injection & Wildcard Protection:** Wildcard characters like `%` and `_` inside `ilike` queries are automatically escaped.
+  * **DoS Defense (Max Depth):** Filter nesting and relation joins (`include`) are strictly bounded to a maximum depth of **3 levels**.
+  * **Automatic Type Coercion:** Strings representing ISO timestamps, dates, booleans, and UUIDs are safely converted to their matching Python column types.
+</Callout>

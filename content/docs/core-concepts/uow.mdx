@@ -1,0 +1,76 @@
+---
+title: Unit of Work & Deferred Events
+description: Deep dive into atomic transaction boundaries and why domain events must be decoupled from database commits.
+icon: Boxes
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+In distributed applications, one of the most common sources of data corruption and phantom side-effects is dispatching notifications or domain events *before* a database transaction is guaranteed to commit. ZCore's **`UnitOfWork`** (UoW) eliminates the "Dual-Write" problem by buffering events and coordinating atomic multi-repository boundaries.
+
+---
+
+## 1. The Atomic Transaction Boundary
+
+`UnitOfWork` is an asynchronous context manager. Upon entering the context (`__aenter__`), it injects a state flag directly into the active SQLAlchemy session metadata:
+
+```python
+# Internal lifecycle flag set by UnitOfWork
+self.session.info["uow_managed"] = True
+```
+
+This flag signals `BaseService` instances to **delegate commit authority**. When any service method (`create`, `update`, `delete`) invokes its internal `_safe_commit()`, it inspects `session.info["uow_managed"]`. Detecting an active UoW, the service skips its individual commit, allowing multiple repositories to participate in a single atomic transaction.
+
+If any exception is raised inside the `async with` block, `UnitOfWork` catches the error, calls `session.rollback()`, and purges the pending event queue.
+
+<Mermaid chart="graph TB
+    Start[async with UnitOfWork] --> Flag[Set session uow_managed = True]
+    Flag --> Repos[Execute Multiple Repository Mutations]
+    Repos --> Buffer[uow.register_event Buffered in Memory]
+    Buffer --> Commit{DB Commit Succeeds?}
+    Commit -- Yes --> Dispatch[Dispatch Pending Events Concurrently]
+    Commit -- No / Exception --> Rollback[session.rollback & Purge Events]"/>
+
+---
+
+## 2. Deferred Event Dispatching (Solving the Dual-Write Problem)
+
+Standard event dispatchers trigger listener callbacks immediately when `dispatch()` is called. In transactional systems, this creates severe consistency bugs:
+
+<Callout type="warn" emoji="🚨">
+  **The Premature Event Trap:**
+  1. `db.flush()` (Order inserted into session)
+  2. `dispatcher.dispatch("order.completed")` (Sends order confirmation email)
+  3. `db.commit()` (Fails due to a serialization or unique constraint error!)
+  
+  **The Bug:** The database transaction rolled back (no order exists), but the customer already received a confirmation email!
+</Callout>
+
+### The ZCore Solution
+Inside a `UnitOfWork`, calling `uow.register_event("order.completed", payload)` does **not** execute listeners immediately. Instead, it buffers the event tuple in an internal `_pending_events` list:
+
+```python
+async with UnitOfWork(self.repository.db, self.dispatcher) as uow:
+    order = await self.order_repo.create(order_data)
+    await self.inventory_repo.decrement_stock(product_id, quantity)
+
+    # Buffered safely: Not dispatched yet!
+    uow.register_event("order.completed", {"order_id": str(order.id)})
+    
+# Dispatches ONLY after the database commit succeeds on context exit!
+```
+
+Only **after** `await self.session.commit()` completes successfully does the UoW pop each event from `_pending_events` and invoke `self.dispatcher.dispatch(...)`. If the commit fails, all buffered events are permanently discarded.
+
+This provides absolute transactional consistency: **If a domain event fires, the database state is guaranteed to be committed.**
+
+---
+
+## 3. Integration with `BaseRepository`
+
+Because all repository instances resolve the active, request-scoped `AsyncSession` managed by `ScopedDependencyMiddleware`, they automatically participate in the `UnitOfWork` lifecycle without any custom configuration. You can orchestrate updates across 5 different domain repositories within a single atomic UoW block.
+
+<Callout type="info" emoji="🔒">
+  **Handler Failure Isolation:**
+  During post-commit event dispatching, if an individual async listener raises an unhandled exception (e.g., an external webhook timeout), `UnitOfWork` catches and logs the failure with full traceback diagnostics, ensuring remaining event handlers continue to execute without interrupting the request lifecycle.
+</Callout>

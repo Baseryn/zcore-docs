@@ -1,0 +1,79 @@
+---
+title: Step 10 - Testing & Expected Output
+description: Write isolated tests using ZTestClient with automatic database rollback and user mocking.
+icon: CircleCheck
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Testing architectural layers can be tricky. ZCore provides `ZTestClient`, which handles Dependency Injection sandboxes, database rollbacks, and user mocking automatically.
+
+<Steps>
+  <Step>
+    ### Write the Test
+
+    Create a file `test_tasks.py` in your root directory:
+
+    ```python
+    # test_tasks.py
+    import pytest
+    import uuid
+    from zcore.testing import ZTestClient
+    from main import app
+
+    @pytest.mark.asyncio
+    async def test_create_task_masks_assignee():
+        # Mock a user ID for the test
+        mock_user_id = uuid.uuid4()
+        
+        async with ZTestClient(
+            app=app, 
+            user_id=mock_user_id,
+            scopes=["tasks:create", "tasks:view"],
+            # Explicitly load the restriction metadata into the request context sandbox
+            extra_context={"restricted_fields": ["tasks.view.assignee_email"]}
+        ) as client:
+            # 1. Create a task with an assignee_email
+            response = await client.post("/tasks", json={
+                "title": "Write Docs",
+                "assignee_email": "secret@example.com"
+            })
+            assert response.status_code == 201
+            task_id = response.json()["data"]["id"]
+            
+            # 2. Fetch the task
+            get_response = await client.get(f"/tasks/{task_id}")
+            data = get_response.json()["data"]
+            
+            # 3. Assertions
+            assert data["title"] == "WRITE DOCS" # pre_create hook worked
+            assert "assignee_email" not in data   # Zchema pruned it!
+    ```
+  </Step>
+
+  <Step>
+    ### Run the Test
+
+    Execute the test using pytest:
+
+    ```bash
+    pytest test_tasks.py -v
+    ```
+  </Step>
+
+  <Step>
+    ### Why This is Powerful
+
+    <Callout type="success" emoji="🧪">
+      **Automated Test Isolation:**
+      * **DatabaseRollback:** The test inserted a task, but because `ZTestClient` uses a savepoint transaction, the database is rolled back to a clean state after the test. No cleanup needed.
+      * **UserContext:** The `mock_user_id`, `scopes`, and `restricted_fields` were automatically injected into `ZContext` for the duration of the request.
+      * **Zero Mocking Boilerplate:** You didn't have to mock `Depends(get_db)` or override complex service layers. The `ZTestClient` orchestrated the IoC container for you.
+    </Callout>
+  </Step>
+</Steps>
+
+**Congratulations!** You have successfully built a secure, modular, and fully tested FastAPI application using ZCore. You've seen how ZCore eliminates boilerplate without locking you into rigid patterns. 
+
+To dive deeper into specific components, explore the [How-To Guides](/how-to) or the [Core Concepts](/docs/concepts).

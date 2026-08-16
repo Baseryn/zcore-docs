@@ -1,0 +1,94 @@
+---
+title: How to test API endpoints
+description: Write isolated, lightning-fast integration tests using ZTestClient with automatic database rollback and user mocking.
+icon: TestTube
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Testing layered architectures often requires mocking database connections, overriding dependencies, and cleaning up test records. ZCore's `ZTestClient` automates this entire pipeline using transactions with savepoints and container sandboxing.
+
+<Steps>
+  <Step>
+    ### 1. Basic Endpoint Test with Database Rollback
+
+    By default (`use_db=True`), any database mutations performed during the test are rolled back on exit:
+
+    ```python
+    # test_tasks.py
+    import pytest
+    from zcore.testing import ZTestClient
+    from main import app
+
+    @pytest.mark.asyncio
+    async def test_create_and_get_tasks():
+        async with ZTestClient(app=app) as client:
+            # 1. Create a task
+            create_res = await client.post("/tasks", json={"title": "Test Task"})
+            assert create_res.status_code == 201
+            task_id = create_res.json()["data"]["id"]
+
+            # 2. Fetch the created task
+            get_res = await client.get(f"/tasks/{task_id}")
+            assert get_res.status_code == 200
+            assert get_res.json()["data"]["title"] == "Test Task"
+            
+        # The database transaction is automatically rolled back here!
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Testing Authenticated Routes & Permissions
+
+    Pass `user_id`, `scopes`, and `is_superuser` to simulate authenticated requests without generating real JWT tokens:
+
+    ```python
+    import uuid
+
+    @pytest.mark.asyncio
+    async def test_admin_delete_operation():
+        admin_id = uuid.uuid4()
+        
+        async with ZTestClient(
+            app=app,
+            user_id=admin_id,
+            scopes=["tasks:delete", "admin:all"],
+            is_superuser=True,
+            extra_context={"restricted_fields": []}
+        ) as client:
+            response = await client.delete(f"/tasks/{uuid.uuid4()}")
+            # Validates that HasScopes dependency allows execution
+            assert response.status_code in [200, 404]
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Class-Based Testing with `BaseZTest`
+
+    For test suites sharing identical user attributes and configuration, inherit from `BaseZTest`:
+
+    ```python
+    from zcore.testing import BaseZTest
+    from main import app
+
+    class TestTaskSuite(BaseZTest):
+        app = app
+        scopes = ["tasks:view", "tasks:create"]
+        extra_user_attrs = {"department": "Engineering"}
+
+        @pytest.mark.asyncio
+        async def test_suite_operation(self):
+            async with self.run() as client:
+                res = await client.get("/tasks")
+                assert res.status_code == 200
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🧪">
+  **Behind the Scenes Orchestration:**
+  * **Database Savepoints:** Connects to the engine, opens a transaction with `create_savepoint`, and binds it to `db_manager.session`. It rolls back instantly on exit without dropping or truncating tables.
+  * **IoC Container Sandboxing:** Backs up singletons, scoped instances, and factories before each test, completely preventing test pollution.
+  * **Application Lifespan:** Automatically executes plugin `before_startup`, `on_startup`, and `on_shutdown` hooks.
+</Callout>

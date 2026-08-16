@@ -1,0 +1,209 @@
+---
+title: BaseRouter
+description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, and endpoint overrides.
+icon: Network
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`BaseRouter` automatically scaffolds standard security-aware CRUD endpoints (POST, GET, GET_ALL, SEARCH, UPDATE, PATCH, DELETE) and coordinates services, validation schemas, and pagination handlers.
+
+## Class Definition
+
+```python
+from zcore import BaseRouter, RouteKey
+
+class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
+    def __init__(self) -> None:
+        ...
+```
+
+---
+
+## Class Attributes
+
+These attributes configure the scaffolded endpoints in your subclass:
+
+<TypeTable
+  type={{
+    model: {
+      type: 'Type[Base]',
+      description: 'The database declarative model class. Used for resolving permission actions.',
+    },
+    create_schema: {
+      type: 'Type[CreateSchemaType] | None',
+      default: 'None',
+      description: 'Pydantic schema class for validating entity creations (POST /).',
+    },
+    update_schema: {
+      type: 'Type[UpdateSchemaType] | None',
+      default: 'None',
+      description: 'Pydantic schema class for validating entity updates (PUT & PATCH /{id}).',
+    },
+    schema_out: {
+      type: 'Type[BaseModel] | None',
+      default: 'None',
+      description: 'Pydantic schema class representing response payloads.',
+    },
+    service: {
+      type: 'Type[BaseService] | Any',
+      description: 'Business service class callable. Auto-wired via Injector.',
+    },
+    prefix: {
+      type: 'str',
+      default: '""',
+      description: 'Path prefix representing the router (e.g., "/tasks").',
+    },
+    tags: {
+      type: 'list[str] | None',
+      default: 'None',
+      description: 'Endpoint classification tags for Swagger / OpenAPI docs.',
+    },
+    exclude: {
+      type: 'set[RouteKey] | None',
+      default: 'set()',
+      description: 'Explicit endpoints to omit from route generation (e.g., {RouteKey.DELETE}).',
+    },
+    pagination_class: {
+      type: 'Type[BasePagination] | None',
+      default: 'None',
+      description: 'Pagination engine class (PageNumberPagination or CursorPagination).',
+    },
+    route_class: {
+      type: 'Type[APIRoute]',
+      default: 'ZCoreAPIRoute',
+      description: 'Custom routing processing class supporting ?schema=true and body caching.',
+    },
+    expose_schemas: {
+      type: 'set[RouteKey] | bool',
+      default: 'False',
+      description: 'Exposes target endpoint schemas dynamically via ?schema=true.',
+    }
+  }}
+/>
+
+---
+
+## RouteKey Enumeration
+
+The `RouteKey` enum identifies standard HTTP endpoints managed by `BaseRouter`:
+
+```python
+from zcore import RouteKey
+```
+
+<TypeTable
+  type={{
+    POST: {
+      type: '"POST"',
+      description: 'Single entity creation endpoint (POST /).',
+    },
+    GET: {
+      type: '"GET"',
+      description: 'Single entity lookup endpoint by UUID (GET /{id:uuid}).',
+    },
+    GET_ALL: {
+      type: '"GET_ALL"',
+      description: 'Batch listing endpoint with optional pagination (GET /).',
+    },
+    SEARCH: {
+      type: '"SEARCH"',
+      description: 'Dynamic search query endpoint with JSON filters (POST /search).',
+    },
+    UPDATE: {
+      type: '"UPDATE"',
+      description: 'Full record update endpoint (PUT /{id:uuid}).',
+    },
+    PATCH: {
+      type: '"PATCH"',
+      description: 'Partial record modification endpoint (PATCH /{id:uuid}).',
+    },
+    DELETE: {
+      type: '"DELETE"',
+      description: 'Single entity deletion endpoint (DELETE /{id:uuid}).',
+    }
+  }}
+/>
+
+---
+
+## Dependency Methods
+
+### `get_route_action`
+
+Retrieves the database/permission action name for a given route key using `model.actions()`.
+
+```python
+def get_route_action(self, route_key: RouteKey) -> str: ...
+```
+
+### `get_route_dependencies`
+
+Generates default route dependencies (authentication, authorization, logging, etc.). Subclasses can override this method to inject dynamic, runtime dependencies per operation.
+
+```python
+def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]: ...
+```
+
+<TypeTable
+  type={{
+    route_key: {
+      type: 'RouteKey',
+      description: 'The target operational route key (e.g., RouteKey.DELETE).',
+    },
+    action: {
+      type: 'str',
+      description: 'The computed database permission action identifier (e.g., "tasks:delete").',
+    },
+    returns: {
+      type: 'list[Any]',
+      description: 'A list of callables, classes, or FastAPI Depends dependencies. Defaults to [HasScopes(action)].',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="💡">
+  By default, `get_route_dependencies` returns `[HasScopes(action)]` to automatically enforce permission scopes mapped from `model.actions()`.
+</Callout>
+
+---
+
+## Overridable Endpoint Handlers
+
+Subclasses can override the core endpoint execution methods to customize response envelopes, inject custom query parameters, or set specialized HTTP status codes:
+
+### `create_endpoint`
+```python
+async def create_endpoint(self, data_in: CreateSchemaType, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+```
+
+### `get_endpoint`
+```python
+async def get_endpoint(self, id: uuid.UUID, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+```
+
+### `get_all_endpoint`
+```python
+async def get_all_endpoint(self, service: BaseService, pagination: Any = None, **kwargs: Any) -> ResponseWrapper: ...
+```
+
+### `search_endpoint`
+```python
+async def search_endpoint(self, search_in: SearchRequest, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+```
+
+### `update_endpoint`
+```python
+async def update_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+```
+
+### `patch_endpoint`
+```python
+async def patch_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+```
+
+### `delete_endpoint`
+```python
+async def delete_endpoint(self, id: uuid.UUID, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+```

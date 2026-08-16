@@ -1,0 +1,197 @@
+---
+title: SearchEngine
+description: API reference for the dynamic search engine, query builders, and request models.
+icon: Search
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing strict depth limits and context security policies.
+
+## Class Definition
+
+```python
+from zcore import SearchRequest
+from zcore.db.search import SearchEngine
+
+class SearchEngine:
+    def __init__(self, model: Type[ModelType]):
+        ...
+```
+
+---
+
+## Methods
+
+### `register_handler`
+
+Binds a custom callback handler to parse a specific field's values dynamically into custom SQL clauses.
+
+```python
+def register_handler(
+    self, 
+    field_name: str, 
+    handler: Callable[[Any], Any]
+) -> SearchEngine: ...
+```
+
+<TypeTable
+  type={{
+    field_name: {
+      type: 'str',
+      description: 'The attribute name to register the custom translation handler for.',
+    },
+    handler: {
+      type: 'Callable[[Any], Any]',
+      description: 'A callback accepting raw filter values and returning computed SQLAlchemy expressions.',
+    },
+    returns: {
+      type: 'SearchEngine',
+      description: 'The current active instance of the SearchEngine for method chaining.',
+    }
+  }}
+/>
+
+### `build_base_query`
+
+Parses search inputs, validates context security policies, and constructs the base `Select` statement with filters, eager loading joins, and sorting (without limit/offset).
+
+```python
+def build_base_query(
+    self, 
+    search_in: SearchRequest, 
+    base_query: Optional[Select] = None
+) -> Select: ...
+```
+
+<TypeTable
+  type={{
+    search_in: {
+      type: 'SearchRequest',
+      description: 'The user-supplied search and filter request model.',
+    },
+    base_query: {
+      type: 'Select | None',
+      default: 'None',
+      description: 'Optional existing SQLAlchemy Select query to extend. If None, uses select(model).',
+    },
+    returns: {
+      type: 'Select',
+      description: 'A secure, compiled SQLAlchemy SELECT statement complete with filters, joins, and sorting.',
+    }
+  }}
+/>
+
+### `build_query`
+
+Constructs the base `Select` query and applies size (limit) and page (offset) boundaries.
+
+```python
+def build_query(self, search_in: SearchRequest) -> Select: ...
+```
+
+<TypeTable
+  type={{
+    search_in: {
+      type: 'SearchRequest',
+      description: 'The search and filter request model containing pagination parameters.',
+    },
+    returns: {
+      type: 'Select',
+      description: 'A securely configured, size-bounded SQLAlchemy SELECT statement.',
+    }
+  }}
+/>
+
+---
+
+## Pydantic Models
+
+### `SearchRequest`
+
+Comprehensive request model containing dynamic search parameters.
+
+```python
+from zcore import SearchRequest
+```
+
+<TypeTable
+  type={{
+    filters: {
+      type: 'List[FilterItem] | None',
+      default: '[]',
+      description: 'A recursive collection of filter constraints.',
+    },
+    include: {
+      type: 'List[str] | None',
+      default: '[]',
+      description: 'Relationship dot-paths indicating database relationships to eager load (Max depth: 3).',
+    },
+    sort: {
+      type: 'List[SortItem] | None',
+      default: '[]',
+      description: 'Explicit ordering instructions.',
+    },
+    size: {
+      type: 'int',
+      default: '20',
+      description: 'The limit on retrieved records (min: 1, max: 100).',
+    },
+    page: {
+      type: 'int',
+      default: '1',
+      description: 'The target page offset index.',
+    },
+    cursor: {
+      type: 'str | None',
+      default: 'None',
+      description: 'Keyset pagination indicator cursor string.',
+    }
+  }}
+/>
+
+### `FilterItem`
+
+Pydantic model representing a single, structured filtering condition or nested logical group.
+
+<TypeTable
+  type={{
+    field: {
+      type: 'str | None',
+      default: 'None',
+      description: 'The dotted path representation of the field to filter (e.g., "owner.email").',
+    },
+    op: {
+      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "ilike", "in", "is_null", "or", "and"]',
+      description: 'The logical comparison or grouping operator to evaluate.',
+    },
+    value: {
+      type: 'Any | None',
+      default: 'None',
+      description: 'The parameter value used during evaluation.',
+    },
+    items: {
+      type: 'List[FilterItem] | None',
+      default: 'None',
+      description: 'Nested list of sub-filters to evaluate when the operator is "or" or "and".',
+    }
+  }}
+/>
+
+### `SortItem`
+
+Pydantic model mapping explicit sorting configurations for query results.
+
+<TypeTable
+  type={{
+    field: {
+      type: 'str',
+      description: 'The dotted target field path on the model to sort by.',
+    },
+    order: {
+      type: 'Literal["asc", "desc"]',
+      default: '"asc"',
+      description: 'The direction to apply: "asc" (ascending) or "desc" (descending).',
+    }
+  }}
+/>

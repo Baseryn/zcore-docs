@@ -1,0 +1,233 @@
+---
+title: Changelog & Release Notes
+description: Track the evolution, architectural refinements, breaking changes, and security fixes across ZCore Framework releases.
+icon: FileClock
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+
+This page documents all notable architectural evolutions, breaking changes, security patches, and migration paths across ZCore releases.
+
+<Callout type="info" emoji="📦">
+  **Upgrading ZCore:**
+  To fetch the latest pre-release build, run:
+  ```bash
+  pip install --upgrade fastapi-zcore-framework
+  ```
+</Callout>
+
+---
+
+<Accordions type="multiple" defaultValue={['v0.1.0-beta.6']}>
+  <Accordion id="v0.1.0-beta.6" title="v0.1.0-beta.6 (Latest Pre-release) — July 16, 2026 🚀">
+    Welcome to **v0.1.0-beta.6** of the ZCore Framework! 🚀
+
+    This release represents a significant step forward in robust data handling, security validation, and comprehensive project governance. Following our core philosophy of **Engineered Simplicity (KISS)**, we addressed critical edge-cases in timezone serialization, refined schema semantics to align with Domain-Driven Design (DDD), and overhauled repository testing pipelines.
+
+    ### 🚀 Core Architectural Refinements
+
+    #### 🌐 Decoupled Presentation Layer Domain (`__model__`)
+    In `Zchema` (`zcore/web/projection.py`), the class attribute `__db_name__` has been officially deprecated in favor of a more semantic and architecturally accurate attribute: **`__model__`**.
+
+    * **The Rationale:** Schemas (DTOs) belong purely to the presentation layer and should not be tightly coupled to database nomenclature by name.
+    * **The Alignment:** All internal recursion, pruning logics, and CLI code-generation templates have been fully migrated to use `__model__` for strict domain binding.
+
+    ```python
+    # Before (beta.5)
+    class TaskResponse(Zchema):
+        __db_name__ = "tasks"
+
+    # After (beta.6+)
+    class TaskResponse(Zchema):
+        __model__ = "tasks"
+    ```
+
+    #### 🔌 Lazy-Loaded Root Namespace Imports
+    Developers can now import highly utilized core framework constructs directly from the root namespace:
+
+    ```python
+    from zcore import RouteKey, Plugin, on_event, EventDispatcher
+    ```
+
+    * Implemented dynamic, lazy-loaded import resolutions within `src/zcore/__init__.py` using Python's dynamic `__getattr__` module block, ensuring zero performance or startup overhead during initialization.
+
+    ### 🐛 Data Integrity & Security Fixes
+
+    #### 🔢 Precision-Preserving Decimal Serialization
+    Changed JSON encoding for `Decimal` instances from standard floating-point (`float`) to string (`str`) inside `CustomJSONEncoder`.
+    * **The Fix:** Converting Decimals to floats introduces floating-point arithmetic inaccuracies and precision loss right before data is dispatched to clients.
+    * **The Result:** Preserves exact decimal precision, establishing the industry standard for financial calculations and highly accurate APIs.
+
+    #### 🗺️ Timezone-Aware Pagination Cursors
+    Refactored the `_encode_cursor` method inside `zcore/db/pagination.py` to intercept naive datetime instances.
+    * Naive datetimes are now explicitly normalized to UTC, and timezone-aware instances are converted safely to UTC before being base64 encoded into cursor payloads.
+    * Resolves cursor misalignment and timezone-awareness dropouts in geographically distributed deployments.
+
+    #### 🛡️ Robust Security Path Normalization
+    Eliminated overzealous string prefix stripping in path resolutions inside `SearchEngine` and `Zchema`.
+    * **The Fix:** Previously, `path.replace("resource.", "")` acted globally and could corrupt legitimate nested relation paths (e.g., `project.resource.status` incorrectly mutated to `project.status`).
+    * **The Result:** Replaced with a strict, localized prefix-matching resolution to secure nested relationships without false positives during access checks.
+
+    #### ⏱️ Native ISO-8601 Datetime Parsing
+    Simplified UTC datetime coercion in `zcore/db/search.py` by removing legacy `.replace("Z", "+00:00")` string manipulation workarounds. The coercion layer now fully relies on native, optimized Python 3.11+ `datetime.fromisoformat()` UTC suffix parsing out-of-the-box.
+
+    ### ⚙️ Automated CI/CD & Project Governance
+
+    * **GitHub Actions Test Suite (CI):** Deployed automated pull-request code quality gates using `ruff check` linting and the `hatch` test suite (blocking merges unless all status checks pass).
+    * **Standardized Issue Templates:** Added customized Bug Report and Feature Request templates to capture environmental diagnostics (DB engines, SQLAlchemy, and Redis versions).
+    * **Automated Semantic Changelogs:** Configured `.github/release.yml` to automatically categorize pull requests under semantic sections based on metadata tags.
+    * **Community Guidelines:** Introduced formal `CONTRIBUTING.md` and `SECURITY.md` files to clarify local setup steps and private vulnerability reporting workflows.
+  </Accordion>
+
+  <Accordion id="v0.1.0-beta.5" title="v0.1.0-beta.5 — July 13, 2026 🚀">
+    Welcome to **v0.1.0-beta.5** of the ZCore Framework! This release centers on **Engineered Simplicity (KISS)**. We deprecated complex, reflection-based configuration variables and brittle runtime hacks, replacing them with standard Object-Oriented patterns, native Pydantic V2 integrations, and cleaner dependency structures.
+
+    ### 🚀 Core Features & Enhancements
+
+    #### 🛡️ Unified Schema Security (`Zchema`)
+    Completely overhauled data pruning and shielding mechanisms. Previously, data masking was handled globally in the web layer via a generic `resource.*` prefix, which was prone to namespace collisions.
+    * **The `Zchema` Class:** All schemas now inherit from `Zchema` (extending Pydantic `BaseModel`).
+    * **Domain-Specific Namespacing:** Define a class-level `__db_name__` (migrated to `__model__` in beta.6).
+    * **3-Tier Protection:** Dynamic Schemas (`?schema=true`), Input Filtering (Anti-Mass Assignment), and Response Serialization Pruning.
+
+    #### 🚦 Template Method Service Hooks
+    To guarantee that business-critical `pre_` and `post_` lifecycle hooks and transaction boundaries are never skipped, we separated orchestration from execution:
+    * **Custom Database Operations:** Developers now override dedicated `on_create`, `on_update`, and `on_delete` callback hooks instead of overriding the public `create()` orchestrator.
+    * The orchestrator guarantees that validation, hooks, and transaction commits (`_safe_commit`) execute in the exact correct order.
+
+    #### 🔗 FastAPI-Native Route Dependencies
+    Conceptually renamed the routing security layer from "Permissions" to "Dependencies", matching FastAPI's core design:
+    * Removed 8 static class variables (`DEFAULT_PERMISSIONS`, `POST_PERMISSIONS`, etc.).
+    * Introduced a single, elegant factory method: `get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]`.
+    * Developers can now use standard Python inheritance and `super()` to customize specific endpoints while maintaining default scopes for others.
+
+    #### 📦 Robust Modular Monolith Imports
+    Resolved `ModuleNotFoundError` across nested modules (such as importing from `shared/` within `modules/identity/`) using a 3-layer approach across CLI, Runtime, and IDE configuration.
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. Schema Base Class', '2. Router Dependencies', '3. Service Overrides']}>
+      <Tab value="1. Schema Base Class">
+        Replace `BaseModel` with `Zchema` and define your domain identifier on schemas:
+
+        ```python
+        # Before (v0.1.0-beta.4)
+        from pydantic import BaseModel
+
+        class UserResponse(BaseModel):
+            email: str
+
+        # After (v0.1.0-beta.5)
+        from zcore import Zchema
+
+        class UserResponse(Zchema):
+            __db_name__ = "user"  # Note: renamed to __model__ in beta.6
+            email: str
+        ```
+      </Tab>
+
+      <Tab value="2. Router Dependencies">
+        Static permission variables have been deprecated. Move custom security logic to the `get_route_dependencies` method:
+
+        ```python
+        # Before (v0.1.0-beta.4)
+        class ProductRouter(BaseRouter):
+            DEFAULT_PERMISSIONS = "AUTO"
+            DELETE_PERMISSIONS = [AdminOnly()]
+
+        # After (v0.1.0-beta.5)
+        class ProductRouter(BaseRouter):
+            def get_route_dependencies(self, route_key: RouteKey, action: str):
+                if route_key == RouteKey.DELETE:
+                    return [AdminOnly()]
+                return super().get_route_dependencies(route_key, action)
+        ```
+      </Tab>
+
+      <Tab value="3. Service Overrides">
+        If you previously overrode `create`, `update`, or `delete` directly, move that database logic to the corresponding `on_*` execution hook:
+
+        ```python
+        # Before (v0.1.0-beta.4)
+        async def create(self, schema: ProductCreate):
+            return await self.repository.create(schema)
+
+        # After (v0.1.0-beta.5)
+        async def on_create(self, schema: ProductCreate) -> Product:
+            return await self.repository.create(schema)
+        ```
+      </Tab>
+    </Tabs>
+
+    ### 🐛 Bug Fixes & Refactoring
+    * Fixed `ModuleNotFoundError` in subfolders of modular directory layouts (#53).
+    * Corrected `IoCContainer` resolution for `Annotated` type hints and manual request-scope instance registration (#48).
+    * Simplified `ZCoreJSONResponse` and removed `ResponseProjector` to avoid redundant serialization overhead.
+  </Accordion>
+
+  <Accordion id="v0.1.0-beta.4" title="v0.1.0-beta.4 (DI Overhaul & Architecture Refinement) — July 07, 2026 🚀">
+    Welcome to **v0.1.0-beta.4** of the ZCore Framework! This version introduces critical architectural refinements, improves ASGI/Async performance by eliminating thread-pool bottlenecks, and simplifies developer experience (DX) for database-backed microservices.
+
+    ### 🚀 Key Improvements & Features
+
+    #### 1. Complete DI Overhaul & Web-Decoupled Scoping
+    The dependency injection (DI) layer has been restructured to strictly adhere to Clean Architecture:
+    * **ASGI Middleware Session Scoping:** The lifetime of the `AsyncSession` database connection is now managed at the ASGI middleware level (`ScopedDependencyMiddleware`). This guarantees that a request-scoped database session is initialized and registered in the DI container before FastAPI resolves routing dependency graphs.
+    * **Annotated Type Unpacking:** The custom DI container (`_auto_wire`) supports Python's native `typing.Annotated` patterns, gracefully extracting the core class definition.
+    * **High-Performance Async Injector:** Modified `Injector.__call__` to be asynchronous (`async def`), evaluating dependencies directly on the main event loop.
+
+    #### 2. Base Query Hook & Extension Layer
+    Introduced structured hook methods in the base repository layer to allow granular control over queries:
+    * `_get_base_query()`: Reusable hook returning the default `Select` statement.
+    * Integrated the base query pipeline seamlessly with the `SearchEngine` dynamic filter compiler.
+
+    #### 3. One-Command Database Bootstrapping
+    Running `zc init <project_name>` through the ZCore CLI automatically creates the default SQLite database file (`zcore_dev.db`) on the filesystem.
+
+    #### 4. Dependency Management
+    Added `uvicorn` as a primary core dependency inside `pyproject.toml` to guarantee `zc run` functions correctly out of the box.
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. Clean Constructor Parameters', '2. Inject vs Depends']}>
+      <Tab value="1. Clean Constructor Parameters">
+        You no longer need to write `= Inject(...)` default values or rely on `SessionDep` in repository/service constructors. Use clean, native Python type hints:
+
+        ```python
+        # Before (v0.1.0-beta.3)
+        class UsersRepository(BaseRepository):
+            def __init__(self, db: SessionDep):
+                super().__init__(model=Users, db=db)
+
+        class UsersService(BaseService):
+            def __init__(self, repository: UsersRepository = Inject(UsersRepository)):
+                super().__init__(model=Users, repository=repository)
+
+        # After (v0.1.0-beta.4)
+        class UsersRepository(BaseRepository):
+            def __init__(self, db: AsyncSession):  # Standard AsyncSession
+                super().__init__(model=Users, db=db)
+
+        class UsersService(BaseService):
+            def __init__(self, repository: UsersRepository):  # Pure Python, no defaults
+                super().__init__(model=Users, repository=repository)
+        ```
+      </Tab>
+
+      <Tab value="2. Inject vs Depends">
+        When writing custom FastAPI dependencies (e.g., `get_current_user`), ensure you use `Inject[T]` instead of `Depends(T)` so that the container handles recursive resolution properly:
+
+        ```python
+        # Custom Route Dependency Example
+        async def get_current_user(
+            token: str = Depends(oauth2_scheme),
+            service: Inject[UsersService]
+        ) -> Users:
+            ...
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+</Accordions>

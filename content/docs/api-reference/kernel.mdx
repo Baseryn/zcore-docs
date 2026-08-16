@@ -1,0 +1,152 @@
+---
+title: Kernel & Plugin Architecture
+description: API reference for the central Kernel orchestrator, topological dependency resolver, and Plugin lifecycle protocol.
+icon: Cpu
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `Kernel` is the central core coordinator for the application lifespan and modular plugins. It assembles registered plugins into a Directed Acyclic Graph (DAG), resolves inter-plugin dependencies topologically, and orchestrates deterministic lifespan transitions.
+
+## Class Definition
+
+```python
+from zcore import Kernel
+# or: from zcore.kernel.engine import Kernel
+
+class Kernel:
+    def __init__(self) -> None:
+        ...
+```
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    plugins: {
+      type: 'Dict[str, Plugin]',
+      description: 'Internal mapping of registered plugin instances keyed by their unique string names.',
+    },
+    dispatcher: {
+      type: 'EventDispatcher',
+      description: 'The central asynchronous application event dispatcher instance.',
+    },
+    _sorted_plugins: {
+      type: 'List[Plugin]',
+      description: 'Cached sequence of sorted plugin instances after topological dependency resolution.',
+    }
+  }}
+/>
+
+---
+
+## Methods
+
+### `add_plugin`
+
+Registers an application plugin instance into the Kernel's local registry.
+
+```python
+def add_plugin(self, plugin: Plugin) -> None: ...
+```
+
+<TypeTable
+  type={{
+    plugin: {
+      type: 'Plugin',
+      description: 'The modular plugin instance conforming to the Plugin protocol interface.',
+    }
+  }}
+/>
+
+### `setup`
+
+Initializes plugin structures and registers core singletons in the IoC container. Sorts dependencies topologically, calls `plugin.setup(app)` on each plugin, and registers `EventDispatcher`.
+
+```python
+def setup(self, app: FastAPI) -> None: ...
+```
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The root FastAPI application instance.',
+    }
+  }}
+/>
+
+<Callout type="info" emoji="⚙️">
+  **Dependency Resolution (`_resolve_dependencies`):** During `setup()`, the Kernel builds a dependency graph from declared plugin structures using `graphlib.TopologicalSorter`. It asserts graph integrity, raising a `RuntimeError` if a missing dependency is detected or if a cyclic dependency loop exists.
+</Callout>
+
+### `lifespan`
+
+Asynchronous context manager governing the active FastAPI application lifespan. Sequentially invokes startup lifecycle phases on sorted plugins and guarantees clean, reversed teardown triggers upon termination.
+
+```python
+@asynccontextmanager
+async def lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]: ...
+```
+
+<TypeTable
+  type={{
+    app: {
+      type: 'FastAPI',
+      description: 'The active running FastAPI instance.',
+    },
+    returns: {
+      type: 'AsyncGenerator[None, None]',
+      description: 'An active async execution state context manager.',
+    }
+  }}
+/>
+
+<Callout type="warn" emoji="⚠️">
+  **Lifespan Execution Order:**
+  * **Startup (Topological Order):** `before_startup` $\rightarrow$ `on_startup` $\rightarrow$ `after_startup`.
+  * **Shutdown (Reversed Topological Order):** `on_shutdown` is invoked in strictly reversed dependency order to ensure upstream resources remain available until dependents have closed cleanly.
+</Callout>
+
+---
+
+## The `Plugin` Protocol
+
+Any domain module intended to plug into the ZCore Kernel must implement the runtime-checkable `Plugin` protocol:
+
+```python
+from typing import Protocol, runtime_checkable
+from fastapi import FastAPI
+
+@runtime_checkable
+class Plugin(Protocol):
+    name: str
+    version: str
+    dependencies: list[str]
+
+    def setup(self, app: FastAPI) -> None: ...
+    async def before_startup(self) -> None: ...
+    async def on_startup(self) -> None: ...
+    async def after_startup(self) -> None: ...
+    async def on_shutdown(self) -> None: ...
+```
+
+<TypeTable
+  type={{
+    name: {
+      type: 'str',
+      description: 'Unique string identifying the plugin domain (e.g., "auth", "tasks").',
+    },
+    version: {
+      type: 'str',
+      description: 'Semantic version string description of the plugin.',
+    },
+    dependencies: {
+      type: 'list[str]',
+      description: 'List of upstream plugin names that must be initialized and started before this plugin.',
+    }
+  }}
+/>

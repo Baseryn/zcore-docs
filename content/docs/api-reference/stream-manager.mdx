@@ -1,0 +1,190 @@
+---
+title: StreamManager
+description: API reference for the real-time event streaming engine using Redis PubSub and bounded memory queues.
+icon: Radio
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`StreamManager` coordinates active listener queues and Redis PubSub operations. It facilitates cluster-wide event routing via subscription channels formatted as `stream:user:<uuid>`, falling back to local memory queues if Redis is unconfigured or offline.
+
+## Class Definition
+
+```python
+from zcore.web import StreamManager
+
+class StreamManager:
+    def __init__(self) -> None:
+        ...
+```
+
+---
+
+## Global Setup Function
+
+### `init_stream_redis`
+
+Initializes the shared Redis connection client for the streaming subsystem.
+
+```python
+from zcore.web import init_stream_redis
+
+def init_stream_redis(client: Any) -> None: ...
+```
+
+<TypeTable
+  type={{
+    client: {
+      type: 'Any',
+      description: 'The active async Redis client instance (e.g., aioredis.from_url(...)).',
+    }
+  }}
+/>
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    redis_client: {
+      type: 'Any | None',
+      description: 'The active shared streaming Redis client, or None if uninitialized.',
+    },
+    users_queues: {
+      type: 'dict[uuid.UUID, list[asyncio.Queue[Any]]]',
+      description: 'In-memory mapping of active user UUIDs to lists of active bounded asyncio listener queues.',
+    }
+  }}
+/>
+
+---
+
+## Methods
+
+### `subscribe`
+
+Subscribes a user, returning a bounded async listener queue. Initializes background Redis PubSub listeners if this is the first active subscription for a user on this node.
+
+```python
+async def subscribe(self, user_id: uuid.UUID) -> asyncio.Queue[Any]: ...
+```
+
+<TypeTable
+  type={{
+    user_id: {
+      type: 'uuid.UUID',
+      description: 'The target user identifier UUID key.',
+    },
+    returns: {
+      type: 'asyncio.Queue[Any]',
+      description: 'A bounded asyncio Queue (maxsize=100) configured to receive incoming event dictionaries.',
+    }
+  }}
+/>
+
+### `unsubscribe`
+
+Unsubscribes a specific listener queue for a user. Shuts down background Redis tasks if no active listeners remain in the local registry.
+
+```python
+async def unsubscribe(self, user_id: uuid.UUID, queue: asyncio.Queue[Any]) -> None: ...
+```
+
+<TypeTable
+  type={{
+    user_id: {
+      type: 'uuid.UUID',
+      description: 'The target user identifier key.',
+    },
+    queue: {
+      type: 'asyncio.Queue[Any]',
+      description: 'The active asyncio Queue instance to deregister.',
+    }
+  }}
+/>
+
+### `subscription`
+
+Asynchronous context manager safely wrapping active user event streams. Guarantees automatic cleanup and queue unregistration upon block exit or connection drops.
+
+```python
+@asynccontextmanager
+async def subscription(
+    self, 
+    user_id: uuid.UUID
+) -> AsyncGenerator[asyncio.Queue[Any], None]: ...
+```
+
+<TypeTable
+  type={{
+    user_id: {
+      type: 'uuid.UUID',
+      description: 'The target user identifier key to stream.',
+    },
+    returns: {
+      type: 'AsyncGenerator[asyncio.Queue[Any], None]',
+      description: 'Yields a bounded async Queue populated with real-time event dictionaries.',
+    }
+  }}
+/>
+
+### `publish`
+
+Publishes an event payload to a target user's stream. Broadcasts cluster-wide across Redis PubSub channel `stream:user:{user_id}`, falling back to local memory delivery if unconfigured.
+
+```python
+async def publish(self, user_id: uuid.UUID, data: dict[str, Any]) -> None: ...
+```
+
+<TypeTable
+  type={{
+    user_id: {
+      type: 'uuid.UUID',
+      description: 'The target recipient user UUID.',
+    },
+    data: {
+      type: 'dict[str, Any]',
+      description: 'JSON-serializable event dictionary to transmit.',
+    }
+  }}
+/>
+
+### `start_listening`
+
+Explicitly initiates background Redis PubSub pattern-matching subscribers (`stream:user:*`).
+
+```python
+async def start_listening(self) -> None: ...
+```
+
+---
+
+## Usage Example (Server-Sent Events)
+
+```python
+import uuid
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from zcore.web import StreamManager
+
+router = APIRouter()
+stream_manager = StreamManager()
+
+@router.get("/notifications/stream/{user_id}")
+async def stream_notifications(user_id: uuid.UUID):
+    async def event_generator():
+        # Automatically registers and safely tears down queue on client disconnect
+        async with stream_manager.subscription(user_id) as queue:
+            while True:
+                payload = await queue.get()
+                yield f"data: {payload}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+```
+
+<Callout type="warn" emoji="🛡️">
+  **Slow-Consumer Overflow Protection:**
+  If a client consumes messages too slowly and their bounded queue reaches 100 items, `StreamManager` catches `asyncio.QueueFull`, immediately unregisters the stalled queue, and drops it to protect host node memory from buffer bloat.
+</Callout>

@@ -1,0 +1,99 @@
+---
+title: Configuration & Context Management
+description: Deep dive into how ZCore handles application settings via lazy proxies and isolates request-scoped state using contextvars.
+icon: Settings
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+One of the most critical challenges in asynchronous web frameworks is managing state safely across concurrent requests. ZCore provides two foundational primitives for this: **`SettingsProxy`** for global application settings and **`ZContext`** for thread-safe, coroutine-aware request state.
+
+---
+
+## 1. The Settings Proxy (Lazy Resolution)
+
+In standard Python applications, importing settings modules at the top of files often causes circular dependency errors or triggers premature database engine instantiation before the application is ready.
+
+ZCore solves this using `SettingsProxy`.
+
+<Callout type="info" emoji="⚙️">
+  **Under the Hood:** When you execute `from zcore import settings`, you are not importing a static instance. You are importing a lightweight `SettingsProxy` object. 
+  This proxy intercepts all attribute lookups (via `__getattr__`) and dynamically resolves the active `Settings` singleton from the `IoCContainer` **only when an attribute is actually accessed**.
+</Callout>
+
+This guarantees that `settings.DATABASE_URL` or `settings.SECRET_KEY` can be safely imported anywhere in your codebase without premature execution.
+
+### Extending Settings
+ZCore automatically binds your `Settings` instance into the IoC container. To add domain-specific variables, inherit from `Settings` and pass the instance to `initialize_settings` at the top of your `main.py`:
+
+```python
+# main.py
+from zcore.config import Settings, initialize_settings
+
+class AppSettings(Settings):
+    AWS_BUCKET: str = "default-bucket"
+    EXTERNAL_API_KEY: str = ""
+
+# Register the subclass into ZCore's IoC container
+initialize_settings(AppSettings())
+```
+
+---
+
+## 2. ZContext (Request-State Isolation)
+
+FastAPI processes thousands of concurrent async requests within a single event loop. Storing request state (such as the active user's identity or tenant ID) in global variables causes race conditions where concurrent requests overwrite each other's data.
+
+ZCore provides **`ZContext`** (`ctx`), an asynchronous execution context store built directly on Python's native `contextvars`.
+
+### How Contextvars Work in ZCore
+1. When an HTTP connection hits `RequestLogMiddleware`, ZCore calls `ctx.initialize()`, creating an isolated memory dictionary tied to that specific coroutine execution tree.
+2. During the request lifecycle, authentication and authorization layers attach state to `ctx`.
+3. When the HTTP response finishes, `ctx.reset(token)` is triggered in a `finally` block, releasing the memory cleanly.
+
+<Mermaid chart="graph TB
+    Req[Incoming HTTP Request] --> Init[ctx.initialize]
+    Init --> Auth[BaseAuth binds user_id & restricted_fields]
+    Auth --> App[Business Logic & Zchema Projection]
+    App --> Clean[ctx.reset token]
+    Clean --> Res[HTTP Response Sent]"/>
+
+### Strongly-Typed Properties
+Instead of relying on unstructured dictionary strings, `ZContext` exposes strongly-typed, validated properties:
+
+* **`ctx.user_id`**: Validated as a `uuid.UUID`. Passing a string automatically coerces it to a UUID; invalid formats raise a `ValueError`.
+* **`ctx.restricted_fields`**: Managed as an immutable `frozenset`. Once loaded during authentication, business logic cannot accidentally mutate restriction paths mid-flight.
+
+### Dynamic Context Operations
+
+```python
+from zcore import ctx
+
+# Store arbitrary request-scoped data
+ctx.set("tenant_id", "enterprise_001")
+
+# Retrieve values with optional fallbacks
+tenant = ctx.get("tenant_id", default="public")
+
+# Delete specific keys
+ctx.remove("tenant_id")
+```
+
+### Temporary Context Scoping (`ctx.scope`)
+If you need to temporarily override context values for a specific block of logic (e.g., executing a background task as a System User or impersonating an account), use the `ctx.scope()` context manager:
+
+```python
+from zcore import ctx
+
+async def perform_system_migration():
+    # Temporarily override user_id and scopes within this block
+    with ctx.scope(user_id=SYSTEM_BOT_UUID, scopes=["system:admin"]):
+        # All services, repos, and logs inside this block see the System Bot identity
+        await run_migration_task()
+        
+    # The context automatically reverts to its original caller state here
+```
+
+<Callout type="info" emoji="🔒">
+  **Security Assurance:** `ZContext` variables do not bleed across async task boundaries. Each concurrent coroutine maintains absolute state isolation.
+</Callout>

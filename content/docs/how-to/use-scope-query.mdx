@@ -1,0 +1,96 @@
+---
+title: How to enforce multi-tenancy & row-level scoping
+description: Automatically isolate tenant data, filter soft-deleted records, or enforce ownership across all repository queries using scope_query.
+icon: ListFilter
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Writing manual `WHERE tenant_id == ...` or `WHERE is_deleted == False` clauses on every single database query is error-prone and risks catastrophic data leakage. 
+
+ZCore solves this at the architectural root: `BaseRepository` automatically checks for a `@classmethod` named **`scope_query`** on your SQLAlchemy model before executing *any* read, listing, count, or dynamic search query.
+
+<Steps>
+  <Step>
+    ### 1. Define `scope_query` on the Model
+
+    Add the `@classmethod def scope_query(cls, query: Select) -> Select` hook to your SQLAlchemy model:
+
+    ```python
+    # tasks/models.py
+    import uuid
+    from sqlalchemy import String, Select
+    from sqlalchemy.orm import Mapped, mapped_column
+    from zcore import Base, ctx
+
+    class Task(Base):
+        __tablename__ = "tasks"
+
+        id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+        title: Mapped[str] = mapped_column(String(255))
+        tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+        is_deleted: Mapped[bool] = mapped_column(default=False)
+
+        @classmethod
+        def scope_query(cls, query: Select) -> Select:
+            """Automatically applied to ALL BaseRepository queries."""
+            # 1. Enforce Soft-Delete filter
+            query = query.where(cls.is_deleted.is_(False))
+
+            # 2. Enforce Multi-Tenant isolation from active request context
+            active_tenant = ctx.get("tenant_id")
+            if active_tenant:
+                query = query.where(cls.tenant_id == active_tenant)
+
+            return query
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Populate the Context in Middleware or Auth
+
+    Set the tenant identifier in `ZContext` (`ctx`) during authentication or via a custom ASGI middleware:
+
+    ```python
+    # Inside your BaseAuth or authentication dependency
+    from zcore import ctx
+
+    # Binds the active organization/tenant to the current coroutine context
+    ctx.set("tenant_id", "org_enterprise_99")
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Automatic Repository Protection
+
+    Once defined, **every** operation executed by `BaseRepository` and `BaseRouter` respects your scoping rules automatically with zero extra code:
+
+    ```python
+    # Standard repository calls:
+    task = await task_repo.get(id=task_id)          # Automatically filtered by tenant_id & is_deleted
+    all_tasks = await task_repo.get_list()          # Automatically returns only non-deleted tenant tasks
+    count = await task_repo.count()                 # Counts only active tenant records
+    search = await task_repo.search(search_request) # Dynamic search applies tenant filter as base query
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🛡️">
+  **Comprehensive Operation Coverage:**
+  `scope_query` is executed inside `_get_base_query()` and automatically wraps all repository operations: `get()`, `get_by_ids()`, `get_list()`, `exist()`, `count()`, and `search()`.
+</Callout>
+
+<Callout type="warn" emoji="⚡">
+  **Bypassing Scoping for Superadmins:**
+  If a background worker or superadmin needs to query across all tenants, simply evaluate `ctx.get("is_superuser")` or check if `tenant_id` is set inside `scope_query`:
+  ```python
+  @classmethod
+  def scope_query(cls, query: Select) -> Select:
+      # If superuser or system task, skip tenant filter
+      if ctx.get("is_superuser"):
+          return query
+      tenant = ctx.get("tenant_id")
+      return query.where(cls.tenant_id == tenant) if tenant else query
+  ```
+</Callout>
