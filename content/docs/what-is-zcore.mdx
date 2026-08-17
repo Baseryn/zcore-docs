@@ -56,7 +56,7 @@ There is no global initialization hook or mandatory app factory that hijacks you
 from zcore import Inject
 
 class NotificationService:
-    def __init__(self, client: EmailClient = Inject[EmailClient]):
+    def __init__(self, client: Inject[EmailClient]):
         self.client = client
 ```
 
@@ -199,22 +199,22 @@ You control the pace of adoption. Moving rightward along the spectrum is entirel
 ## Explore the Components
 
 <Cards>
-  <Card title="Inject & Container" href="/docs/di">
+  <Card title="Inject & Container" href="/docs/api-reference/ioc-container/">
     Explore automatic type-safe constructor wiring.
   </Card>
-  <Card title="BaseRepository" href="/docs/repository">
+  <Card title="BaseRepository" href="/docs/api-reference/repository">
     Async CRUD, keyset pagination, and secure search engines.
   </Card>
-  <Card title="BaseService" href="/docs/service">
+  <Card title="BaseService" href="/docs/api-reference/service">
     Isolate business logic with pre/post execution hooks.
   </Card>
-  <Card title="Zchema" href="/docs/zchema">
+  <Card title="Zchema" href="/docs/api-reference/zchema">
     Dynamic field-level security pruning for responses.
   </Card>
-  <Card title="UnitOfWork" href="/docs/uow">
+  <Card title="UnitOfWork" href="/docs/api-reference/uow">
     Atomic transactions and deferred event dispatching.
   </Card>
-  <Card title="BaseRouter" href="/docs/router">
+  <Card title="BaseRouter" href="/docs/api-reference/base-router">
     Rapid endpoint scaffolding with full override capabilities.
   </Card>
 </Cards>
