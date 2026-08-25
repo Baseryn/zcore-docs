@@ -4,6 +4,7 @@
     "use-cli-commands",
     "wire-dependencies",
     "register-singleton-vs-scoped",
+    "run-background-tasks",
     "override-repository",
     "use-scope-query",
     "implement-cursor-pagination",

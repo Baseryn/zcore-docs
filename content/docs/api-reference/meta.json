@@ -12,6 +12,7 @@
     "ioc-container",
     "inject",
     "events",
+    "background-tasks",
     "security",
     "base-auth",
     "base-cache",

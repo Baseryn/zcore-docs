@@ -87,6 +87,43 @@ ZCore tracks the active resolution graph using an internal `_stack` set during a
 CircularDependencyError: Circular dependency detected: ServiceA -> ServiceB -> ServiceA
 ```
 
+---
+
+## 6. Background Tasks & Isolated Scope (`background_scope`, `@background_task`)
+
+When an HTTP request completes, the ASGI middleware disposes of the request-scoped database session and purges `_scoped_instances`. Running background routines after the request finishes requires an independent scope.
+
+ZCore provides two utilities for safe background processing:
+
+### A. The `@background_task` Decorator
+
+Decorate any asynchronous or synchronous background worker. The decorator:
+1. Spawns an isolated `background_scope()`.
+2. Automatically allocates a fresh, dedicated `AsyncSession`.
+3. Inspects the function's signature and auto-resolves any missing type-annotated dependencies via `container.resolve()`.
+
+```python
+from zcore.kernel import background_task
+from tasks.services import TaskService
+
+@background_task
+async def send_welcome_email(user_id: uuid.UUID, service: TaskService):
+    # 'service' and its underlying AsyncSession are automatically resolved in an isolated scope
+    await service.notify(user_id)
+```
+
+### B. The `background_scope` Context Manager
+
+For manual execution blocks, `background_scope` provides explicit boundary control:
+
+```python
+from zcore.kernel import background_scope
+
+async with background_scope(inherit_context=True, custom_flag="worker"):
+    # Clean, isolated IoC and DB session lifecycle
+    ...
+```
+
 <Callout type="info" emoji="⚡">
   **Constructor vs Route Usage:**
   * **In Class Constructors (`__init__`):** Use plain Python type hints (`def __init__(self, repo: TaskRepo):`).
