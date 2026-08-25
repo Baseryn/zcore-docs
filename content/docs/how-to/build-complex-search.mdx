@@ -63,12 +63,30 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
     }
     ```
   </Step>
+
+  <Step>
+    ### Configuring Max Search & Relation Depth (`__max_search_depth__`)
+
+    By default, ZCore enforces a **3-level nesting & relation depth limit** to prevent Denial-of-Service (DoS) and infinite recursion query attacks. 
+
+    If your domain requires deeper relation eager-loading or deeply nested filter trees, set `__max_search_depth__` on your SQLAlchemy model:
+
+    ```python
+    # tasks/models.py
+    from zcore import Base
+
+    class Task(Base):
+        __tablename__ = "tasks"
+        __max_search_depth__ = 5  # <--- Allows up to 5 levels of nested includes/filters
+        ...
+    ```
+  </Step>
 </Steps>
 
 <Callout type="info" emoji="🛡️">
   **Built-In Security & Safeguards:**
   * **Context Shielding:** If the active user has a restricted field in `ctx.restricted_fields` (e.g. `tasks.assignee.email`), any attempt to filter, sort, or include that field immediately raises a `ForbiddenError`.
   * **SQL Injection & Wildcard Protection:** Wildcard characters like `%` and `_` inside `ilike`, `contains`, `startswith`, and `endswith` queries are automatically escaped.
-  * **DoS Defense (Max Depth):** Filter nesting and relation joins (`include`) are strictly bounded to a maximum depth of **3 levels** (configurable via `__max_search_depth__` on models).
+  * **DoS Defense (Max Depth):** Filter nesting and relation joins (`include`) are strictly bounded by `__max_search_depth__` (default: **3**).
   * **Automatic Type Coercion:** Strings representing ISO timestamps, dates, booleans, and UUIDs (including elements inside `between` and `in` arrays) are safely converted to their matching Python column types.
 </Callout>
