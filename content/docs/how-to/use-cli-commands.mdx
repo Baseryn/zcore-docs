@@ -1,25 +1,156 @@
 ---
 title: How to use CLI commands
-description: Master the ZCore CLI for scaffolding and environment management.
+description: Master the ZCore interactive CLI for project scaffolding, domain app generation, and environment management.
 icon: Terminal
 ---
 
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-The `zc` CLI tool accelerates project setup, domain scaffolding, and environment variable generation.
+The `zc` CLI tool accelerates your entire development lifecycle — from interactive multi-database bootstrapping and 7-layer domain scaffolding to cryptographically secure secret generation and zero-config development servers.
 
-### Available Commands
+---
+
+### Command Overview
 
 | Command | Purpose | Flags / Options |
 |---|---|---|
-| `zc init <name>` | Scaffolds a new FastAPI + ZCore project directory. | — |
-| `zc startapp <name>` | Creates a modular domain/plugin folder inside your project. | `-t, --template` (Boilerplate)<br/>`--test` (Generate test file) |
-| `zc run` | Starts the Uvicorn dev server (reads `HOST` & `PORT` from `.env`). Automatically enables `--reload`| — |
-| `zc gensecret` | Generates a 64-char cryptographically secure hex secret key. | — |
-| `zc genenv` | Introspects the registered `Settings` class and generates a `.env` template. | `-o, --output` (Default: `.env.example`)<br/>`-f, --force` (Overwrite file) |
+| `zc` | Launches the interactive dashboard with auto-detected project context. | — |
+| `zc init [name]` | Scaffolds a full ZCore project with driver selection and `.venv` setup. | `--db [sqlite\|postgres\|mysql]`<br/>`-y, --yes` (Use defaults) |
+| `zc startapp [name]` | Generates a 7-layer modular domain module / plugin. | `--template / --no-template`<br/>`--test / --no-test`<br/>`-y, --yes` (All layers) |
+| `zc run` | Starts Uvicorn with `--reload` (reads `HOST` & `PORT` from `.env`). | — |
+| `zc gensecret` | Generates a 64-character cryptographically secure `SECRET_KEY`. | — |
+| `zc genenv` | Introspects the `Settings` class and exports an `.env.example` schema. | `-o, --output` (Default: `.env.example`)<br/>`-f, --force` (Overwrite) |
 | `zc --version` | Displays the active ZCore Framework version. | — |
 
-<Callout type="warn" emoji="⚠️">
-  **Never commit actual `.env` files:**
-  Always run `zc genenv` and commit the generated `.env.example` file to your Git repository. Keep your real `.env` file listed in `.gitignore` with secrets secured.
+---
+
+<Steps>
+  <Step>
+    ### 1. Interactive Dashboard (`zc`)
+
+    Running `zc` with no arguments opens the interactive terminal dashboard powered by **Rich** and **Questionary**. It automatically detects whether you are inside an active ZCore project or managing a multi-project workspace:
+
+    ```bash
+    zc
+    ```
+
+    ```text
+    ⚡ ZCore Framework v0.1.0-Beta • Modern Modular Monolith
+       FastAPI • SQLAlchemy 2.0 • Pydantic V2
+
+      Context: Active Project (core_api)
+
+    ? What framework task would you like to perform?
+    ❯ 🧩  startapp   — Scaffold a modular domain app / plugin
+      ⚡  run        — Launch Uvicorn development server
+      📋  genenv     — Generate template .env from Settings class
+      🔑  gensecret  — Generate cryptographically secure SECRET_KEY
+      📦  init       — Scaffold another ZCore project
+      🚪  exit       — Exit CLI
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Initializing a New Project (`zc init`)
+
+    Create a complete project structure with automated database driver configuration and isolated virtual environment setup:
+
+    #### Interactive Mode:
+    ```bash
+    zc init my_project
+    ```
+    You will be prompted to choose:
+    * **Primary Database Driver:** SQLite (`aiosqlite`), PostgreSQL (`asyncpg`), or MySQL (`aiomysql`).
+    * **Virtual Environment & Dependencies:** Automatically create `.venv` and install packages using `uv` (ultra-fast) or `pip`.
+
+    #### Non-Interactive (CI/CD or Quick Scripts):
+    ```bash
+    # Scaffold with PostgreSQL driver without prompts
+    zc init my_project --db postgres -y
+    ```
+
+    #### Generated Project Tree:
+    ```text
+    📁 my_project/
+    ├── 📄 main.py            # FastAPI lifespan, kernel setup, and middleware stack
+    ├── 📄 .env               # Pre-configured DATABASE_URL and fresh SECRET_KEY
+    ├── 📄 requirements.txt   # Core framework + selected async database driver
+    ├── 📄 .gitignore         # Comprehensive Python and environment ignore rules
+    └── 📦 .venv/             # Optional isolated virtual environment
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Scaffolding Modular Domain Apps (`zc startapp`)
+
+    ZCore promotes a **Modular Monolith** architecture where each business domain is an isolated plugin folder containing up to 7 architectural layers:
+
+    #### Interactive Mode:
+    ```bash
+    zc startapp order_management
+    ```
+
+    You can choose between:
+    1. **Full Boilerplate:** Generates ready-to-use template code for all selected layers.
+    2. **Clean / Blank:** Generates clean, empty files for all selected layers.
+    3. **Custom / Mixed:** Granularly select which layers get boilerplate templates and which stay blank.
+
+    #### Non-Interactive Mode:
+    ```bash
+    # Generate all layers with boilerplate and tests
+    zc startapp order_management -y
+
+    # Scaffold without boilerplate templates
+    zc startapp order_management --no-template
+    ```
+
+    #### Generated Domain Module:
+    ```text
+    📁 order_management/
+    ├── 📄 __init__.py
+    ├── 📄 models.py         # SQLAlchemy 2.0 mapped model with UUID PK
+    ├── 📄 schemas.py        # Zchema Pydantic V2 schemas (Base, Create, Update, Response)
+    ├── 📄 repositories.py   # BaseRepository subclass with full async CRUD
+    ├── 📄 services.py       # BaseService subclass with pre/post execution hooks
+    ├── 📄 routers.py        # BaseRouter scaffold exposing 7 RESTful endpoints
+    ├── 📄 plugin.py         # Modular Plugin lifecycle class for Kernel registration
+    └── 📄 tests.py          # Pytest async test suite using ZTestClient
+    ```
+  </Step>
+
+  <Step>
+    ### 4. Running the Development Server (`zc run`)
+
+    Launch the local development server with zero configuration:
+
+    ```bash
+    zc run
+    ```
+
+    * Automatically adds the project root to `PYTHONPATH`.
+    * Reads `HOST` (default `127.0.0.1`) and `PORT` (default `8000`) from `.env`.
+    * Enables live code reloading (`--reload`).
+  </Step>
+
+  <Step>
+    ### 5. Managing Secrets and Environment Schemas
+
+    #### Generate a Cryptographic Secret:
+    ```bash
+    zc gensecret
+    ```
+    Outputs a secure 64-character hexadecimal key (using `secrets.token_hex(32)`) ready for your production `.env` under `SECRET_KEY`.
+
+    #### Generate `.env.example` from Pydantic Settings:
+    ```bash
+    zc genenv -o .env.example -f
+    ```
+    Introspects your registered `Settings` class (including all custom subclassed fields and defaults) and writes a synchronized `.env.example` template.
+  </Step>
+</Steps>
+
+<Callout type="warn" emoji="🔐">
+  **Security Best Practice:**
+  Always run `zc genenv` and commit the generated `.env.example` to version control. **Never commit actual `.env` files.** Keep real secrets in environment variables or your secure production vault.
 </Callout>

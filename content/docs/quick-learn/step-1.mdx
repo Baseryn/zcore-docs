@@ -8,24 +8,13 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { File, Files, Folder } from 'fumadocs-ui/components/files';
 
-In this first step, we will set up the foundation of our project. ZCore is designed to be zero-config out of the box, but for a production-ready start, we need to ensure our environment variables and secret keys are generated securely.
+In this first step, we will set up the foundation of our project. ZCore is designed to be zero-config out of the box, with automated virtual environment initialization and cryptographically secure secret generation.
 
 <Steps>
   <Step>
-    ### Create a Virtual Environment
-
-    Always start by isolating your Python environment. We recommend Python 3.11 or higher.
-
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use: venv\Scripts\activate
-    ```
-  </Step>
-
-  <Step>
     ### Install the Framework
 
-    Install ZCore with all its standard dependencies (FastAPI, SQLAlchemy, Pydantic, etc.). The `[all]` flag ensures you get the complete toolkit.
+    Install ZCore with all its standard dependencies (FastAPI, SQLAlchemy, Pydantic, Questionary, Rich, etc.). The `[all]` extra ensures you get the complete toolkit.
 
     ```bash
     pip install fastapi-zcore-framework[all]
@@ -33,53 +22,58 @@ In this first step, we will set up the foundation of our project. ZCore is desig
   </Step>
 
   <Step>
-    ### Scaffold the Project
+    ### Scaffold the Project with the CLI
 
-    Use the ZCore CLI to generate a clean project structure. Let's call our project `task_manager`.
+    Use the `zc init` command to create a project structure. The CLI will interactively ask for your database preference (SQLite, PostgreSQL, or MySQL) and package manager (`uv` or `pip`).
 
     ```bash
     zc init task_manager && cd task_manager
     ```
 
-    This generates a minimal FastAPI entry point and a `.env` file.
+    This command automatically:
+    * Generates a pre-configured `.env` file with a freshly generated 64-character `SECRET_KEY`.
+    * Creates `main.py`, `requirements.txt`, and `.gitignore`.
+    * Initializes an isolated virtual environment (`.venv`) and installs project dependencies if selected.
+
     <Files>
       <Folder name="task_manager" defaultOpen>
-        <File name=".env" />
         <File name="main.py" />
+        <File name=".env" />
         <File name="requirements.txt" />
+        <File name=".gitignore" />
+        <File name="zcore_dev.db" />
       </Folder>
     </Files>
   </Step>
 
   <Step>
-    ### Generate a Secure Secret Key
+    ### Secret Keys & Environment Management
 
-    <Callout type="warning" title="Security Best Practice">
-      By default, the scaffolded `.env` file contains a fallback `SECRET_KEY`. In any environment outside local testing, this **must** be replaced with a cryptographically secure string.
-    </Callout>
-
-    ZCore provides a built-in CLI command to generate a secure 64-character hex string. Run this command and copy the output:
+    `zc init` already populates `.env` with a cryptographically strong `SECRET_KEY`. However, if you need to generate a new key or rotate credentials later, run:
 
     ```bash
     zc gensecret
-    # Output example: 🔑 Generated Cryptographic Secret Key:
-    # 9f8a2b... (64 characters)
     ```
 
-    Now, open your `.env` file and replace the `SECRET_KEY` value with the generated string.
+    To generate a clean `.env.example` schema from your Pydantic settings at any time:
+
+    ```bash
+    zc genenv -o .env.example -f
+    ```
   </Step>
 
   <Step>
     ### Understand the Settings Class
 
-    Open `main.py`. You will see that ZCore imports `settings` from `zcore.config`. This `settings` object is a `SettingsProxy` that reads from your `.env` file using Pydantic v2.
+    Open `main.py`. You will see that ZCore imports `settings` from `zcore.config`. This `settings` object is a `SettingsProxy` that reads from your `.env` file using Pydantic V2 Settings.
 
     ```python
     # main.py (excerpt)
     from zcore import settings
 
-    # ZCore reads DATABASE_URL, SECRET_KEY, etc., automatically
-    print(settings.PROJECT_NAME) 
+    # ZCore reads DATABASE_URL, SECRET_KEY, DEBUG, etc., automatically
+    print(settings.PROJECT_NAME)
+    print(settings.DATABASE_URL)
     ```
 
     <Callout type="info" emoji="💡">
@@ -88,4 +82,4 @@ In this first step, we will set up the foundation of our project. ZCore is desig
   </Step>
 </Steps>
 
-Excellent! Your environment is now secure and ready. In the next step, we will initialize the database engine.
+Excellent! Your environment is now secure and ready. In the next step, we will examine database initialization.
