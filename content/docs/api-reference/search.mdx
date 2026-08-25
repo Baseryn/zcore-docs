@@ -1,18 +1,20 @@
 ---
 title: SearchEngine
-description: API reference for the dynamic search engine, query builders, and request models.
+description: API reference for the dynamic search engine, query builders, filter operators, and request models.
 icon: Search
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing strict depth limits and context security policies.
+The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing strict depth limits, wildcard escaping, and context security policies.
 
 ## Class Definition
 
 ```python
+from typing import Type
 from zcore import SearchRequest
 from zcore.db.search import SearchEngine
+from zcore.db.setup import ModelType
 
 class SearchEngine:
     def __init__(self, model: Type[ModelType]):
@@ -162,13 +164,13 @@ Pydantic model representing a single, structured filtering condition or nested l
       description: 'The dotted path representation of the field to filter (e.g., "owner.email").',
     },
     op: {
-      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "ilike", "in", "is_null", "or", "and"]',
-      description: 'The logical comparison or grouping operator to evaluate.',
+      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "ilike", "contains", "startswith", "endswith", "between", "in", "is_null", "or", "and"]',
+      description: 'The logical comparison, string search, range, or grouping operator to evaluate.',
     },
     value: {
       type: 'Any | None',
       default: 'None',
-      description: 'The parameter value used during evaluation.',
+      description: 'The parameter value used during evaluation (e.g. string, scalar, or [min, max] list for between).',
     },
     items: {
       type: 'List[FilterItem] | None',
