@@ -87,6 +87,12 @@ ZCore tracks the active resolution graph using an internal `_stack` set during a
 CircularDependencyError: Circular dependency detected: ServiceA -> ServiceB -> ServiceA
 ```
 
+<Callout type="info" emoji="⚡">
+  **Constructor vs Route Usage:**
+  * **In Class Constructors (`__init__`):** Use plain Python type hints (`def __init__(self, repo: TaskRepo):`).
+  * **In FastAPI Route Endpoints:** Use `Inject[T]` (`async def route(service: Inject[TaskService]):`).
+</Callout>
+
 ---
 
 ## 6. Background Tasks & Isolated Scope (`background_scope`, `@background_task`)
@@ -123,9 +129,3 @@ async with background_scope(inherit_context=True, custom_flag="worker"):
     # Clean, isolated IoC and DB session lifecycle
     ...
 ```
-
-<Callout type="info" emoji="⚡">
-  **Constructor vs Route Usage:**
-  * **In Class Constructors (`__init__`):** Use plain Python type hints (`def __init__(self, repo: TaskRepo):`).
-  * **In FastAPI Route Endpoints:** Use `Inject[T]` (`async def route(service: Inject[TaskService]):`).
-</Callout>
