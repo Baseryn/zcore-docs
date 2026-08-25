@@ -764,7 +764,7 @@ export default function HomePage() {
           </p>
           <div className="flex justify-center gap-4">
             <Link
-              href="/docs"
+              href="/docs/quick-start/"
               className="px-6 py-2.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-sm font-semibold transition"
             >
               Read the Docs

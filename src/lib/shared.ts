@@ -5,6 +5,6 @@ export const docsContentRoute = '/llms.mdx/docs';
 
 export const gitConfig = {
   user: 'Baseryn',
-  repo: 'zcore-docs',
+  repo: 'zcore',
   branch: 'master',
 };
