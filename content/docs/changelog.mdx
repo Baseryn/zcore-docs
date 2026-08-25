@@ -14,14 +14,118 @@ This page documents all notable architectural evolutions, breaking changes, secu
   **Upgrading ZCore:**
   To fetch the latest pre-release build, run:
   ```bash
-  pip install --upgrade fastapi-zcore-framework
+  pip install --upgrade fastapi-zcore-framework[all]
   ```
 </Callout>
 
 ---
 
-<Accordions type="multiple" defaultValue={['v0.1.0-beta.7']}>
-  <Accordion id="v0.1.0-beta.7" title="v0.1.0-beta.7 (Latest Pre-release) — August 16, 2026 🚀">
+<Accordions type="multiple" defaultValue={['v0.1.0-beta.8']}>
+  <Accordion id="v0.1.0-beta.8" title="v0.1.0-beta.8 (Latest Pre-release) — August 24, 2026 🚀">
+    Welcome to **v0.1.0-beta.8** of the ZCore Framework! 🚀
+
+    As we approach our milestone **v1.0.0** stable release, `v0.1.0-beta.8` delivers major performance breakthroughs in relational data mutations, introduces an enterprise-grade isolated background task execution pipeline with automatic dependency injection, embeds native soft-delete capabilities, significantly expands dynamic search operators, and completely redesigns the developer experience with a rich, interactive Terminal User Interface (TUI).
+
+    ### 🚀 Core Features & Architectural Advancements
+
+    #### 1. ⚡ High-Performance Bulk DBAPI Mutations (`create_multi`, `update_multi`, `delete_multi`)
+    We completely revamped the bulk data modification pipelines in `BaseRepository` to bypass individual ORM hydration overhead and leverage native database acceleration:
+    * **`create_multi` via `INSERT ... RETURNING`:** Batch insertions now execute in a single roundtrip using atomic `INSERT ... RETURNING` clauses, eliminating individual entity flushes while returning fully hydrated model instances.
+    * **`update_multi` via DBAPI `executemany`:** Batch updates now bypass pre-fetching and hydrating ORM entities in memory. Updates are executed directly at the DBAPI level with compiled parameterized payloads, followed by a single consolidated batch query fetch.
+    * **`delete_multi` via `DELETE ... RETURNING`:** Bulk deletions are executed in a single atomic SQL statement without prior entity fetching, returning all deleted records cleanly.
+
+    #### 2. ⏱️ Isolated Background Tasks & Scope Management (`background_scope`, `@background_task`)
+    Running background jobs in FastAPI that access request-scoped dependencies or database sessions often triggers `RuntimeError: Session is closed`. ZCore resolves this at the architectural layer:
+    * **`background_scope` Async Context Manager:** Provisions an independent IoC scope, allocates a fresh, dedicated `AsyncSession` from `db_manager`, and safely clones the active user context (`inherit_context=True`) for background execution.
+    * **`@background_task` Decorator:** Automatically wraps any async coroutine or synchronous function (executed in a non-blocking threadpool via `anyio.to_thread`) inside `background_scope()`.
+    * **Automatic IoC Auto-Wiring:** Any type-annotated parameter omitted during invocation is automatically resolved directly from the IoC container.
+
+    #### 3. 🗑️ Built-in Soft Deletion Infrastructure (`SoftDeleteMixin`)
+    Soft deletion is now an out-of-the-box framework primitive rather than a manual scoping pattern:
+    * **`SoftDeleteMixin`:** Add timestamp-based soft deletion to any model with `class Task(Base, SoftDeleteMixin):`.
+    * **Automatic Query Scoping:** Injects an indexed, timezone-aware `deleted_at: Mapped[datetime | None]` column and automatically filters all repository operations (`get()`, `get_list()`, `count()`, `exist()`, `search()`) with `WHERE deleted_at IS NULL`.
+    * **Lifecycle Helpers:** Provides clean `task.soft_delete()`, `task.restore()`, and `task.is_deleted` properties.
+
+    #### 4. 🔍 Advanced Dynamic Search Operators & Configurable Depth (`SearchEngine`)
+    The dynamic query engine has been significantly expanded with powerful string-matching and range operators:
+    * **`contains`:** Performs substring matching on text columns (with automatic wildcard sanitization) and collection containment.
+    * **`startswith` & `endswith`:** String prefix and suffix matching with automated SQL wildcard escaping.
+    * **`between`:** Range evaluations for numerical, date, and timestamp columns accepting inclusive `[min, max]` boundaries with automatic type coercion.
+    * **Configurable `__max_search_depth__`:** Filter and relation inclusion (`include`) depth limits can now be customized per model via the `__max_search_depth__` attribute (defaulting safely to `3` to defend against query DoS attacks).
+
+    #### 5. 🛡️ Scope-Aware Existence Verifications (`exist`)
+    * `BaseRepository.exist()` now strictly evaluates and enforces model-level `scope_query` and soft-delete filters before checking record existence via `limit(1)`, preventing cross-tenant or deleted entity enumeration.
+
+    #### 6. 🖥️ Interactive TUI & Scaffolding Engine (`zc`)
+    The `zc` CLI has been completely rewritten into an interactive Terminal User Interface powered by **Rich** and **Questionary**:
+    * **Context-Aware Dashboard:** Running `zc` automatically detects whether you are in an active project or a workspace with multiple microservices.
+    * **Multi-Database Bootstrapping:** `zc init` interactively configures SQLite (`aiosqlite`), PostgreSQL (`asyncpg`), or MySQL (`aiomysql`) with pre-configured `.env` and `requirements.txt` files.
+    * **Automated Virtual Environment Setup:** Automatically initializes isolated `.venv` environments and installs dependencies using ultra-fast `uv` or standard `pip`.
+    * **Granular 7-Layer Scaffolding:** `zc startapp` supports *Full Boilerplate*, *Clean/Blank*, or *Custom Layer Selection* across Models, Schemas, Repositories, Services, Routers, Plugins, and Pytest suites.
+    * **Automatic Secret Key Generation:** `zc init` automatically provisions fresh 64-character cryptographic `SECRET_KEY` strings into `.env`.
+
+    ---
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. Bulk Mutation Signatures', '2. SoftDeleteMixin', '3. Background Tasks']}>
+      <Tab value="1. Bulk Mutation Signatures">
+        Because `create_multi`, `update_multi`, and `delete_multi` now utilize database-level `RETURNING` clauses and direct DBAPI execution, manual `refresh=True` loops are no longer needed.
+
+        ```python
+        # Before (v0.1.0-beta.7)
+        created_items = await repo.create_multi(schemas, refresh=True)
+
+        # After (v0.1.0-beta.8)
+        created_items = await repo.create_multi(schemas)
+        ```
+      </Tab>
+
+      <Tab value="2. SoftDeleteMixin">
+        If you previously wrote manual `WHERE is_deleted == False` clauses in `scope_query`, you can now inherit directly from `SoftDeleteMixin`.
+
+        ```python
+        # Before (v0.1.0-beta.7)
+        class Task(Base):
+            __tablename__ = "tasks"
+            is_deleted: Mapped[bool] = mapped_column(default=False)
+
+            @classmethod
+            def scope_query(cls, query: Select) -> Select:
+                return query.where(cls.is_deleted.is_(False))
+
+        # After (v0.1.0-beta.8)
+        from zcore import Base, SoftDeleteMixin
+
+        class Task(Base, SoftDeleteMixin):
+            __tablename__ = "tasks"
+            # Automatically provides deleted_at, is_deleted, soft_delete(), restore(), and scope_query
+        ```
+      </Tab>
+
+      <Tab value="3. Background Tasks">
+        Replace manual session allocations inside background routines with `@background_task`.
+
+        ```python
+        # Before (v0.1.0-beta.7)
+        async def process_task(task_id: uuid.UUID):
+            session = container.resolve(AsyncSession)
+            await session.execute(...)
+
+        # After (v0.1.0-beta.8)
+        from zcore.kernel import background_task
+        from zcore import Inject
+
+        @background_task
+        async def process_task(task_id: uuid.UUID, service: Inject[TaskService]):
+            # Automatically runs in an isolated IoC scope & independent AsyncSession
+            await service.process(task_id)
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+
+  <Accordion id="v0.1.0-beta.7" title="v0.1.0-beta.7 — August 16, 2026 🚀">
     Welcome to **v0.1.0-beta.7** of the ZCore Framework! 🚀
 
     This is one of the most substantial and transformative releases in ZCore's history. Guided by our foundational philosophy of **Engineered Simplicity (KISS)** and **Clean Architecture**, `v0.1.0-beta.7` eliminates generic boilerplate across data layers, introduces a complete asynchronous testing framework with transaction rollback guarantees, unifies request-scoped context state and security primitives, and introduces event-driven subscriber mechanics.
