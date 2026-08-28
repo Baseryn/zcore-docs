@@ -1,0 +1,86 @@
+---
+title: How to run isolated background tasks
+description: Execute async background jobs, auto-wire services, and isolate database sessions without HTTP request lifecycle leaks.
+icon: Clock
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+In standard FastAPI applications, running background tasks that access database sessions or request-scoped dependencies often causes `Session is closed` errors. ZCore provides `@background_task` and `background_scope` to solve this seamlessly.
+
+<Steps>
+  <Step>
+    ### 1. Using `@background_task` with Auto-Wiring
+
+    Decorate your task with `@background_task`. Any type-annotated parameter that you don't explicitly pass when calling the function will be **automatically resolved from the IoC container**:
+
+    ```python
+    # tasks/tasks.py
+    import uuid
+    from zcore.kernel import background_task
+    from zcore import Inject
+    from .services import TaskService
+
+    @background_task
+    async def process_task_analytics(
+        task_id: uuid.UUID,
+        service: TaskService  # <--- Auto-injected from IoC container!
+    ):
+        # Operates in its own dedicated AsyncSession & IoC scope
+        await service.recalculate_metrics(task_id)
+    ```
+
+    <Callout type="info" emoji="💡">
+      **Both Sync & Async Supported:** If your task is synchronous (`def`), `@background_task` automatically runs it in a non-blocking worker thread using `anyio.to_thread.run_sync`.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### 2. Scheduling with FastAPI `BackgroundTasks`
+
+    Inject FastAPI's standard `BackgroundTasks` into your router and schedule the decorated task. You only need to pass the arguments that cannot be auto-wired (like `task_id`):
+
+    ```python
+    # tasks/routers.py
+    import uuid
+    from fastapi import APIRouter, BackgroundTasks
+    from .tasks import process_task_analytics
+
+    router = APIRouter(prefix="/tasks", tags=["Tasks"])
+
+    @router.post("/{id}/process")
+    async def trigger_task_processing(
+        id: uuid.UUID,
+        background_tasks: BackgroundTasks
+    ):
+        # Pass only the explicit arguments
+        background_tasks.add_task(process_task_analytics, task_id=id)
+        
+        return {"message": "Task processing queued in background"}
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Manual Scoping with `background_scope`
+
+    If you prefer explicit context manager blocks instead of decorators, use `background_scope()` directly:
+
+    ```python
+    from zcore.kernel import background_scope, container
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from tasks.services import TaskService
+
+    async def custom_background_worker(user_id: uuid.UUID):
+        # Creates an isolated IoC scope & independent database transaction
+        async with background_scope(inherit_context=True):
+            service = container.resolve(TaskService)
+            await service.send_digest(user_id)
+    ```
+  </Step>
+</Steps>
+
+<Callout type="warn" emoji="🔒">
+  **Context Inheritance:**
+  By default, `inherit_context=True` clones the active user context (`user_id`, `scopes`, etc.) into the background task, allowing role-based operations and audit trails to persist even after the HTTP connection has closed.
+</Callout>

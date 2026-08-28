@@ -1,6 +1,5 @@
 import Link from 'next/link';
 
-// ─── Icons (zero-dependency inline SVGs with smooth transition glows) ───────────────────────────
 const ChevronRight = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
 );
@@ -25,7 +24,6 @@ const SparkleIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v1m0 16v1m-8-9H3m18 0h1m-2.636-6.364l-.707-.707M6.343 17.657l-.707-.707m0-12.728l.707-.707m12.728 12.728l.707-.707"/><circle cx="12" cy="12" r="4"/></svg>
 );
 
-// New Icons for Core Pillars
 const ShieldIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
 );
@@ -42,8 +40,6 @@ const BlocksIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="14" y="3" rx="1"/><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"/></svg>
 );
 
-
-// ─── Core Pillars Data ────────────────────────────────────────────
 const pillars = [
   {
     icon: <ShieldIcon />,
@@ -71,9 +67,7 @@ const pillars = [
   }
 ];
 
-// ─── 3x3 Dynamic Grid Tool Data ───────────────────────────────────
 const tools = [
-  // --- Category: Independent (Green) ---
   {
     category: 'independent',
     badge: '🟢 Independent',
@@ -83,6 +77,16 @@ const tools = [
     def __init__(self, repo: Inject[Repo]):
         self.repo = repo`,
     without: 'FastAPI Depends(get_task_repo) chains',
+  },
+  {
+    category: 'independent',
+    badge: '🟢 Independent',
+    name: 'background_task',
+    oneLine: 'Isolate background scopes, auto-inject IoC dependencies, and manage database sessions safely.',
+    code: `@background_task
+async def sync_data(task_id: uuid.UUID, service: Inject[TaskService]):
+    await service.process(task_id)`,
+    without: 'Manual session lifecycle and context leakage in BackgroundTasks',
   },
   {
     category: 'independent',
@@ -134,7 +138,6 @@ async def handle(payload):
 result = await repo.get_list(pagination=paginator)`,
     without: 'Manual offset/limit calculations',
   },
-  // --- Category: Composable (Yellow) ---
   {
     category: 'composable',
     badge: '🟡 Composable',
@@ -165,8 +168,6 @@ query = engine.build_query(req)`,
     cost: float # hidden dynamically`,
     without: 'Writing multiple Pydantic outputs',
   },
-
-  // --- Category: Orchestrated (Red) ---
   {
     category: 'orchestrated',
     badge: '🔴 Orchestrated',
@@ -194,7 +195,6 @@ query = engine.build_query(req)`,
   },
 ];
 
-// ─── Adoption Steps ────────────────────────────────────────────────
 const adoptionSteps = [
   {
     step: 0,
@@ -232,37 +232,31 @@ async def create_task(data: TaskCreate, repo: Inject[TaskRepo]):
   },
 ];
 
-
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-[#030303] dark:text-zinc-100 selection:bg-emerald-500/30 selection:text-emerald-950 dark:selection:text-emerald-200 relative overflow-hidden font-sans transition-colors duration-300">
 
-      {/* ── Ambient Background ── */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-gradient-to-b from-emerald-500/5 to-teal-600/2 dark:from-emerald-500/8 dark:to-teal-600/3 blur-[140px] rounded-full pointer-events-none z-0" />
       <div className="absolute top-[900px] -left-32 w-[500px] h-[500px] bg-emerald-600/2 dark:bg-emerald-600/4 blur-[120px] rounded-full pointer-events-none z-0" />
       <div className="absolute top-[1800px] -right-32 w-[500px] h-[500px] bg-teal-600/2 dark:bg-teal-600/4 blur-[120px] rounded-full pointer-events-none z-0" />
 
-      {/* Grid Pattern */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#e4e4e7_1px,transparent_1px),linear-gradient(to_bottom,#e4e4e7_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1a1a1a_1px,transparent_1px),linear-gradient(to_bottom,#1a1a1a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20 dark:opacity-20 pointer-events-none z-0" />
 
       <div className="relative max-w-6xl mx-auto px-6 py-20 z-10">
 
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 1: HERO                                          */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <header className="flex flex-col items-center text-center max-w-3xl mx-auto mb-24">
 
           <div className="mb-10 w-full max-w-md md:max-w-lg select-none pointer-events-none filter drop-shadow-lg transition-transform duration-300 hover:scale-[1.01]">
             <img 
               src="https://raw.githubusercontent.com/Baseryn/zcore-docs/master/public/banner.png"
-              alt="FastAPI ZCore Framework Logo" 
+              alt="FastAPI ZCore Framework Logo by Baseryn" 
               className="w-full h-auto object-contain dark:brightness-110 dark:contrast-105"
             />
           </div>
 
           <div className="inline-flex items-center gap-2 px-3.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 dark:border-emerald-500/10 rounded-full mb-8 backdrop-blur-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
-            <span>Python 3.11+ · Apache-2.0 · Fully Async</span>
+            <span>By Baseryn · Python 3.11+ · Apache-2.0 · Fully Async</span>
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-bold tracking-tight leading-[1.1] mb-6">
@@ -274,7 +268,7 @@ export default function HomePage() {
           </h1>
 
           <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-10 max-w-2xl">
-            A pragmatically engineered architectural framework built on top of FastAPI.
+            A pragmatically engineered architectural framework by <span className="font-semibold text-zinc-900 dark:text-zinc-100">Baseryn</span> built on top of FastAPI.
             Absolute freedom. No rigid constraints. Use only what you need, and override everything else.
           </p>
 
@@ -296,9 +290,6 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 1.5: CORE PILLARS (New Section)                  */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {pillars.map((p, i) => (
@@ -311,9 +302,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 2: 30-SECOND DEMO                                */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-3">
@@ -369,10 +357,6 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 3: PICK WHAT YOU NEED — Tool Cards (3x3 Grid)    */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold tracking-tight mb-4">Pick Only What You Need.</h2>
@@ -441,10 +425,6 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 4: GRADUAL ADOPTION                              */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold tracking-tight mb-4">Adopt Gradually. Scale Comfortably.</h2>
@@ -485,10 +465,6 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 5: DECISION TABLE                                */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold tracking-tight mb-4">When do I need this?</h2>
@@ -538,16 +514,21 @@ export default function HomePage() {
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Depends() parameters</td>
                 </tr>
                 <tr className="bg-white/40 dark:bg-zinc-950/30">
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Execute background jobs with clean IoC & DB session isolation</td>
+                  <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">background_task</td>
+                  <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Manual BackgroundTasks boilerplate</td>
+                </tr>
+                <tr className="bg-zinc-50/40 dark:bg-zinc-950/20">
                   <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Dispatch events cleanly after a transaction commits</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">EventDispatcher</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Manual listener triggers</td>
                 </tr>
-                <tr className="bg-zinc-50/40 dark:bg-zinc-950/20">
+                <tr className="bg-white/40 dark:bg-zinc-950/30">
                   <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Handle large datasets with high-performance cursor paging</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">Pagination</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Manual offset/limit math</td>
                 </tr>
-                <tr className="bg-white/40 dark:bg-zinc-950/30">
+                <tr className="bg-zinc-50/40 dark:bg-zinc-950/20">
                   <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Structure domain modules with topological startup order</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">Plugin System</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Spaghetti app.on_event</td>
@@ -563,26 +544,21 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 6: CLI QUICK START                               */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
           <div>
             <h2 className="text-3xl font-bold tracking-tight mb-4">
-              Scaffold & Run
+              Interactive CLI.
               <br />
-              in 30 Seconds.
+              Scaffold &amp; Run in Seconds.
             </h2>
             <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed mb-6">
-              The built-in CLI handles project bootstrapping, modular domain app setups, and template generation. 
-              <span className="text-zinc-400 dark:text-zinc-500"> Get clean base files, then customize, delete, or override whatever you want.</span>
+              The built-in <code className="font-mono text-xs bg-zinc-200/60 dark:bg-zinc-800/80 px-1.5 py-0.5 rounded text-emerald-600 dark:text-emerald-400">zc</code> tool orchestrates your entire architecture — from interactive multi-database bootstrapping (SQLite, PostgreSQL, MySQL) with <code className="font-mono text-xs">uv</code>/<code className="font-mono text-xs">pip</code> virtualenvs, to granular 7-layer domain scaffolding, cryptographically secure secret generation, and zero-config development servers.
             </p>
             <Link
-              href="/docs"
+              href="/docs/how-to/use-cli-commands"
               className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline transition"
             >
-              CLI reference <ChevronRight />
+              Explore CLI commands <ChevronRight />
             </Link>
           </div>
 
@@ -592,25 +568,23 @@ export default function HomePage() {
             </div>
             <div><span className="text-zinc-600">$</span> pip install fastapi-zcore-framework[all]</div>
             <br/>
-            <div><span className="text-zinc-600">$</span> zc init my_app <span className="text-zinc-600">&&</span> cd my_app</div>
-            <div className="text-emerald-400">✔ Generated: main.py, .env, requirements.txt, .gitignore</div>
+            <div><span className="text-zinc-600">$</span> zc init core_api --db postgres</div>
+            <div className="text-emerald-400">✔ Scaffolding project with asyncpg driver &amp; .venv</div>
+            <div className="text-zinc-500">  📁 core_api (main.py, .env, requirements.txt, .gitignore)</div>
             <br/>
-            <div><span className="text-zinc-600">$</span> zc startapp tasks --template</div>
-            <div className="text-emerald-400">✔ Generated Domain: model, schemas, repo, service, router, plugin</div>
+            <div><span className="text-zinc-600">$</span> cd core_api <span className="text-zinc-600">&amp;&amp;</span> zc startapp order_management</div>
+            <div className="text-emerald-400">✔ Modular App &apos;order_management&apos; created</div>
+            <div className="text-zinc-500">  📄 models, schemas, repositories, services, routers, plugin, tests</div>
             <br/>
             <div><span className="text-zinc-600">$</span> zc run</div>
-            <div className="text-zinc-500">INFO:     Uvicorn running on http://127.0.0.1:8000</div>
-            <div className="text-green-500">✔ FastAPI application is running with ZCore plugins active</div>
+            <div className="text-zinc-500">INFO:     Uvicorn running on http://127.0.0.1:8000 (Reload: Enabled)</div>
+            <div className="text-green-500">✔ ZCore kernel initialized with plugins &amp; dialect logger</div>
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 7: DYNAMIC SCHEMA GENERATION                     */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-center max-w-5xl mx-auto">
-            <div className="border border-zinc-800/80 rounded-xl bg-zinc-950 p-5 font-mono text-xs leading-normal relative text-zinc-100 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="order-2 md:order-1 border border-zinc-800/80 rounded-xl bg-zinc-950 p-5 font-mono text-xs leading-normal relative text-zinc-100 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="absolute top-4 right-4 text-zinc-600">
                 <TerminalIcon />
               </div>
@@ -630,7 +604,7 @@ export default function HomePage() {
               <div className="text-emerald-400">{`}`}</div>
             </div>
 
-            <div>
+            <div className="order-1 md:order-2">
               <h2 className="text-3xl font-bold tracking-tight mb-4">
                 Real-Time UI Generation
                 <br />
@@ -648,10 +622,6 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 8: THE ROADMAP — ZCore Admin                     */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="max-w-4xl mx-auto rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.02] dark:border-emerald-500/10 dark:bg-emerald-500/[0.01] p-8 md:p-10 backdrop-blur-sm relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -663,25 +633,25 @@ export default function HomePage() {
                 </div>
                 
                 <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-4">
-                  The Dynamic Admin Panel
+                  The Projection-Driven Admin Panel
                 </h2>
                 
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
-                  We are conceptualizing a highly modular, lightning-fast administrative dashboard for FastAPI, natively powered by the ZCore core architecture.
+                  We are conceptualizing a highly modular, lightning-fast administrative dashboard for FastAPI, natively powered by ZCore&apos;s projection-driven schema engine and context-shielded contracts.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-zinc-700 dark:text-zinc-400">
                   <div className="flex items-center gap-2">
-                    <CheckIcon /> <span>Reporting via <code className="font-mono text-zinc-800 dark:text-zinc-300">SearchEngine</code></span>
+                    <CheckIcon /> <span>Projection-based UI auto-generated from <code className="font-mono text-zinc-800 dark:text-zinc-300">Zchema</code></span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <CheckIcon /> <span>Dynamic UI built with <code className="font-mono text-zinc-800 dark:text-zinc-300">Zchema</code></span>
+                    <CheckIcon /> <span>Advanced reporting via <code className="font-mono text-zinc-800 dark:text-zinc-300">SearchEngine</code></span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <CheckIcon /> <span>Code-free automatic CRUDs</span>
+                    <CheckIcon /> <span>Code-free automated CRUD &amp; action bindings</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <CheckIcon /> <span>Fully async websocket logs</span>
+                    <CheckIcon /> <span>Real-time telemetry and async streaming</span>
                   </div>
                 </div>
               </div>
@@ -701,10 +671,6 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 9: OVERRIDABILITY                               */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="mb-28">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold tracking-tight mb-4">Built to be Overridden.</h2>
@@ -751,10 +717,6 @@ export default function HomePage() {
           </div>
         </section>
 
-
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/*  SECTION 10: CTA FOOTER                                   */}
-        {/* ═══════════════════════════════════════════════════════════ */}
         <section className="border-t border-zinc-200 dark:border-zinc-900 pt-16 text-center">
           <h2 className="text-2xl font-bold mb-4">
             Your FastAPI codebase. ZCore where it helps.
@@ -764,7 +726,7 @@ export default function HomePage() {
           </p>
           <div className="flex justify-center gap-4">
             <Link
-              href="/docs"
+              href="/docs/quick-start/"
               className="px-6 py-2.5 rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-sm font-semibold transition"
             >
               Read the Docs
@@ -777,6 +739,30 @@ export default function HomePage() {
             >
               GitHub
             </a>
+          </div>
+
+          <p className='text-zinc-500 text-sm mt-8 max-w-md mx-auto'>
+            Created by <span className="font-semibold text-zinc-800 dark:text-zinc-200">Baseryn</span>.
+          </p>
+
+          <div className="mt-4 flex justify-center items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-600 font-mono">
+            <Link 
+              href="/llms.txt" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-zinc-600 dark:hover:text-zinc-400 hover:underline transition"
+            >
+              llms.txt
+            </Link>
+            <span>·</span>
+            <Link 
+              href="/llms-full.txt" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-zinc-600 dark:hover:text-zinc-400 hover:underline transition"
+            >
+              llms-full.txt
+            </Link>
           </div>
         </section>
 

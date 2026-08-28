@@ -12,35 +12,46 @@ A core philosophy of ZCore is organizing applications into decoupled, modular do
 
 <Steps>
   <Step>
-    ### Generate the Domain
+    ### Generate the Domain Module
 
-    Run the following CLI command to scaffold a `tasks` domain. The `--template` flag generates boilerplate code to get us started immediately.
+    Run the `zc startapp` command to scaffold a `tasks` domain. The `--template` flag populates all standard layers with working boilerplate code.
 
     ```bash
     zc startapp tasks --template
     ```
+
+    You can also run `zc startapp tasks` without flags for an interactive prompt where you can select specific architectural layers to generate.
   </Step>
 
   <Step>
-    ### Examine the Structure
+    ### Examine the 7-Layer Structure
 
     ZCore generates a self-contained directory for your domain:
 
     <Files>
       <Folder name="tasks" defaultOpen>
+        <File name="__init__.py" />
         <File name="models.py" />
         <File name="schemas.py" />
         <File name="repositories.py" />
         <File name="services.py" />
         <File name="routers.py" />
         <File name="plugin.py" />
+        <File name="tests.py" />
       </Folder>
     </Files>
 
     <Callout type="info" emoji="💡">
-      **Separation of Concerns:** This structure decouples your database access (`repositories.py`) from your business logic (`services.py`) and web layer (`routers.py`). You are free to delete or modify any of these files.
+      **Separation of Concerns:** This structure cleanly decouples:
+      * **Data Mapping:** `models.py` (SQLAlchemy 2.0)
+      * **Validation & Projection:** `schemas.py` (Zchema / Pydantic V2)
+      * **Data Access:** `repositories.py` (BaseRepository)
+      * **Business Logic:** `services.py` (BaseService)
+      * **HTTP Endpoints:** `routers.py` (BaseRouter)
+      * **Lifecycle & Wiring:** `plugin.py` (Plugin)
+      * **Integration Tests:** `tests.py` (ZTestClient)
     </Callout>
   </Step>
 </Steps>
 
-Now we have a clean slate. In the next step, we will define our database model inside this module.
+Now we have a clean modular domain ready. In the next step, we will define our database model inside `tasks/models.py`.

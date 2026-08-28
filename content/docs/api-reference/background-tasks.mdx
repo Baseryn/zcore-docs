@@ -1,0 +1,86 @@
+---
+title: Background Tasks & Scopes
+description: API reference for background_scope and @background_task decorator for isolated asynchronous execution.
+icon: Clock
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore provides `background_scope` and `@background_task` to ensure asynchronous background jobs run in an independent IoC container lifecycle, with dedicated database sessions, context isolation, and automatic dependency auto-wiring.
+
+---
+
+## Functions
+
+### `background_scope`
+
+An asynchronous context manager that provisions an isolated execution context, allocated database session (`AsyncSession`), and independent `ZContext` store.
+
+```python
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Any
+
+@asynccontextmanager
+async def background_scope(
+    inherit_context: bool = True,
+    **custom_context: Any,
+) -> AsyncGenerator[None, None]:
+    ...
+```
+
+#### Parameters
+
+<TypeTable
+  type={{
+    inherit_context: {
+      type: 'bool',
+      default: 'True',
+      description: 'If True, clones active request context parameters (e.g., user_id, scopes, action) into the background scope.',
+    },
+    custom_context: {
+      type: 'dict[str, Any]',
+      default: '{}',
+      description: 'Explicit key-value attributes to override or populate in the background context store.',
+    }
+  }}
+/>
+
+---
+
+### `@background_task`
+
+A function decorator that automatically wraps execution inside `background_scope()` and inspects parameter type annotations to auto-wire dependencies from the global IoC container.
+
+```python
+from collections.abc import Callable
+from typing import Any
+
+def background_task(func: Callable[..., Any]) -> Callable[..., Any]:
+    ...
+```
+
+#### Behavior & Execution Matrix
+
+| Function Type | Execution Strategy | Dependency Resolution |
+|---|---|---|
+| **Asynchronous (`async def`)** | Executed directly on the asyncio event loop within `background_scope()`. | Auto-resolved from `container.resolve()` for type-annotated arguments. |
+| **Synchronous (`def`)** | Offloaded asynchronously to a worker thread via `anyio.to_thread.run_sync`. | Auto-resolved from `container.resolve()` before thread dispatch. |
+
+---
+
+## Lifecycle Guarantee
+
+<Callout type="info" emoji="🛡️">
+  **Why background_scope is necessary:**
+  When FastAPI finishes sending an HTTP response, `ScopedDependencyMiddleware` closes the request's `AsyncSession` and clears the request's IoC scope.
+  
+  If a standard `BackgroundTasks` job accesses that session, it encounters a `RuntimeError: Session is closed`.
+  
+  `background_scope` solves this by:
+  1. Generating a fresh, independent UUID `scope_id`.
+  2. Opening a dedicated, standalone `AsyncSession` from `db_manager.session()`.
+  3. Registering the new session as a scoped instance in the IoC container.
+  4. Guaranteeing session commit/rollback and scope purging upon completion or failure.
+</Callout>

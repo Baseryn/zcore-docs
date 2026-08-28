@@ -1,23 +1,50 @@
 ---
 title: SearchEngine
-description: API reference for the dynamic search engine, query builders, and request models.
+description: API reference for the dynamic search engine, query builders, filter operators, and configurable relation depth.
 icon: Search
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
 
-The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing strict depth limits and context security policies.
+The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing configurable depth limits, wildcard escaping, and context security policies.
 
 ## Class Definition
 
 ```python
+from typing import Type
 from zcore import SearchRequest
 from zcore.db.search import SearchEngine
+from zcore.db.setup import ModelType
 
 class SearchEngine:
     def __init__(self, model: Type[ModelType]):
+        self.model = model
+        self.max_depth: int = getattr(model, "__max_search_depth__", 3)
         ...
 ```
+
+---
+
+## Properties
+
+<TypeTable
+  type={{
+    model: {
+      type: 'Type[ModelType]',
+      description: 'The root database model bound to this search instance.',
+    },
+    max_depth: {
+      type: 'int',
+      default: '3 (or model.__max_search_depth__)',
+      description: 'The maximum allowable filter nesting and relation join depth.',
+    },
+    custom_handlers: {
+      type: 'dict[str, Callable[[Any], Any]]',
+      description: 'Registered custom translation callbacks mapped to specific field names.',
+    }
+  }}
+/>
 
 ---
 
@@ -125,7 +152,7 @@ from zcore import SearchRequest
     include: {
       type: 'List[str] | None',
       default: '[]',
-      description: 'Relationship dot-paths indicating database relationships to eager load (Max depth: 3).',
+      description: 'Relationship dot-paths indicating database relationships to eager load (bounded by max_depth).',
     },
     sort: {
       type: 'List[SortItem] | None',
@@ -162,13 +189,13 @@ Pydantic model representing a single, structured filtering condition or nested l
       description: 'The dotted path representation of the field to filter (e.g., "owner.email").',
     },
     op: {
-      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "ilike", "in", "is_null", "or", "and"]',
-      description: 'The logical comparison or grouping operator to evaluate.',
+      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "ilike", "contains", "startswith", "endswith", "between", "in", "is_null", "or", "and"]',
+      description: 'The logical comparison, string match, range, or grouping operator to evaluate.',
     },
     value: {
       type: 'Any | None',
       default: 'None',
-      description: 'The parameter value used during evaluation.',
+      description: 'The parameter value used during evaluation (e.g. string, scalar, or [min, max] list for between).',
     },
     items: {
       type: 'List[FilterItem] | None',
