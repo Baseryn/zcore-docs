@@ -24,7 +24,7 @@ This page documents all notable architectural evolutions, breaking changes, secu
   <Accordion id="v0.1.0-beta.8" title="v0.1.0-beta.8 (Latest Pre-release) — August 24, 2026 🚀">
     Welcome to **v0.1.0-beta.8** of the ZCore Framework! 🚀
 
-    As we approach our milestone **v1.0.0** stable release, `v0.1.0-beta.8` delivers major performance breakthroughs in relational data mutations, introduces an enterprise-grade isolated background task execution pipeline with automatic dependency injection, embeds native soft-delete capabilities, significantly expands dynamic search operators, and completely redesigns the developer experience with a rich, interactive Terminal User Interface (TUI).
+    As we approach our milestone **v1.0.0** stable release, `v0.1.0-beta.8` delivers major performance breakthroughs in relational data mutations, introduces an enterprise-grade isolated background task execution pipeline with automatic dependency injection, embeds native soft-delete capabilities, significantly expands dynamic search operators, completely redesigns the developer experience with a rich, interactive Terminal User Interface (TUI), and aligns all CLI scaffolding templates with the latest single-generic architecture.
 
     ### 🚀 Core Features & Architectural Advancements
 
@@ -63,6 +63,12 @@ This page documents all notable architectural evolutions, breaking changes, secu
     * **Automated Virtual Environment Setup:** Automatically initializes isolated `.venv` environments and installs dependencies using ultra-fast `uv` or standard `pip`.
     * **Granular 7-Layer Scaffolding:** `zc startapp` supports *Full Boilerplate*, *Clean/Blank*, or *Custom Layer Selection* across Models, Schemas, Repositories, Services, Routers, Plugins, and Pytest suites.
     * **Automatic Secret Key Generation:** `zc init` automatically provisions fresh 64-character cryptographic `SECRET_KEY` strings into `.env`.
+
+    ### 🐛 Bug Fixes & Refinements
+
+    #### 7. 🛠️ CLI Scaffolding Template Alignment
+    * **Fixed `BaseRepository` & `BaseService` Boilerplate:** Corrected scaffolding templates in `zcore.cli.templates` (`REPOSITORY_TEMPLATE` and `SERVICE_TEMPLATE`) to use the streamlined single-generic signature (`BaseRepository[Model]` and `BaseService[Model]`) introduced in `v0.1.0-beta.7`, removing obsolete schema generic parameters and redundant imports.
+    * **AST Compilation Test Guard:** Added explicit AST compilation testing to the test suite (`test_scaffolded_templates_are_valid_python`) to guarantee all generated boilerplates are 100% valid, error-free Python code.
 
     ---
 
