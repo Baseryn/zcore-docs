@@ -29,15 +29,10 @@ class Settings(BaseSettings):
 
 <TypeTable
   type={{
-    PROJECT_NAME: {
-      type: 'str',
-      default: '"ZCore Application"',
-      description: 'Human-readable title name for the project and OpenAPI documentation.',
-    },
-    DEBUG: {
-      type: 'bool',
-      default: 'True',
-      description: 'Boolean flag indicating whether the application runs in debug mode (affects logging and fail-fast checks).',
+    DATABASE: {
+      type: 'DatabaseSettings',
+      default: 'DatabaseSettings()',
+      description: 'Structured configuration model for database engine and connection pool parameters.',
     },
     DATABASE_URL: {
       type: 'str',
@@ -58,6 +53,36 @@ class Settings(BaseSettings):
       type: 'int',
       default: '10',
       description: 'Maximum overflowing connections allowed beyond POOL_SIZE.',
+    },
+    LOGGING: {
+      type: 'LoggingSettings',
+      default: 'LoggingSettings()',
+      description: 'Structured configuration model for framework and application logging settings.',
+    },
+    LOG_LEVEL: {
+      type: 'str',
+      default: '"INFO"',
+      description: 'Fallback environment logging level string.',
+    },
+    TIMEZONE: {
+      type: 'str',
+      default: '"UTC"',
+      description: 'IANA standard timezone string used across the application.',
+    },
+    AUTO_CONVERT_TIMEZONE: {
+      type: 'bool',
+      default: 'True',
+      description: 'Boolean flag determining automatic API timezone conversions during serialization.',
+    },
+    PROJECT_NAME: {
+      type: 'str',
+      default: '"ZCore Application"',
+      description: 'Human-readable title name for the project and OpenAPI documentation.',
+    },
+    DEBUG: {
+      type: 'bool',
+      default: 'True',
+      description: 'Boolean flag indicating whether the application runs in debug mode (affects logging and fail-fast checks).',
     },
     SECRET_KEY: {
       type: 'str',
@@ -82,12 +107,156 @@ class Settings(BaseSettings):
     STORAGE_PATH: {
       type: 'str',
       default: '"./storage"',
-      description: 'Local filesystem base directory path reserved for file uploads.',
+      description: 'Local filesystem base directory path reserved for file uploads (aliases: STORAGE_PATH, STORAGE_BASE_PATH).',
+    },
+    STORAGE_URL_PREFIX: {
+      type: 'str',
+      default: '"/storage"',
+      description: 'HTTP URL prefix mapped to exposed static assets (aliases: STORAGE_URL_PREFIX, STORAGE_PREFIX).',
     },
     REDIS_URL: {
       type: 'str | None',
       default: 'None',
       description: 'Distributed Redis connection URI, or None for local memory caching and streaming.',
+    }
+  }}
+/>
+
+---
+
+## Nested Configuration Models
+
+### `DatabaseSettings`
+
+Schema defining connection pool and execution parameters for SQLAlchemy asynchronous engines:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Any
+
+class DatabaseSettings(BaseModel):
+    url: str = "sqlite+aiosqlite:///zcore.db"
+    pool_size: int = 5
+    max_overflow: int = 10
+    pool_recycle: int = 1800
+    pool_pre_ping: bool = True
+    echo: bool = False
+    connect_args: dict[str, Any] = Field(default_factory=dict)
+    execution_options: dict[str, Any] = Field(default_factory=dict)
+    extra_engine_kwargs: dict[str, Any] = Field(default_factory=dict)
+```
+
+<TypeTable
+  type={{
+    url: {
+      type: 'str',
+      default: '"sqlite+aiosqlite:///zcore.db"',
+      description: 'Primary asynchronous database connection URL.',
+    },
+    pool_size: {
+      type: 'int',
+      default: '5',
+      description: 'The connection pool size for non-SQLite databases.',
+    },
+    max_overflow: {
+      type: 'int',
+      default: '10',
+      description: 'Maximum overflowing connections allowed beyond pool_size.',
+    },
+    pool_recycle: {
+      type: 'int',
+      default: '1800',
+      description: 'Connection recycle duration in seconds.',
+    },
+    pool_pre_ping: {
+      type: 'bool',
+      default: 'True',
+      description: 'Boolean flag to enable pool pre-ping connection liveness checks.',
+    },
+    echo: {
+      type: 'bool',
+      default: 'False',
+      description: 'Direct SQLAlchemy engine echo flag.',
+    },
+    connect_args: {
+      type: 'dict[str, Any]',
+      default: '{}',
+      description: 'Custom connection arguments forwarded directly to the database driver.',
+    },
+    execution_options: {
+      type: 'dict[str, Any]',
+      default: '{}',
+      description: 'Execution options passed to the SQLAlchemy engine.',
+    },
+    extra_engine_kwargs: {
+      type: 'dict[str, Any]',
+      default: '{}',
+      description: 'Additional keyword arguments forwarded to create_async_engine.',
+    }
+  }}
+/>
+
+### `LoggingSettings`
+
+Schema configuring structured logging, file rotation, and SQL query interception:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, Any
+
+class LoggingSettings(BaseModel):
+    level: str = "INFO"
+    json_format: Optional[bool] = None
+    log_sql_queries: bool = True
+    slow_query_threshold_ms: Optional[float] = None
+    file_path: Optional[str] = None
+    muted_loggers: list[str] = Field(
+        default_factory=lambda: [
+            "uvicorn",
+            "uvicorn.access",
+            "uvicorn.error",
+            "sqlalchemy.engine",
+        ]
+    )
+    custom_processors: list[Any] = Field(default_factory=list)
+```
+
+<TypeTable
+  type={{
+    level: {
+      type: 'str',
+      default: '"INFO"',
+      description: 'Active logging level string (DEBUG, INFO, WARNING, ERROR, CRITICAL).',
+    },
+    json_format: {
+      type: 'Optional[bool]',
+      default: 'None',
+      description: 'Explicit JSON output flag. If None, defaults to JSON in production and colored console in debug mode.',
+    },
+    log_sql_queries: {
+      type: 'bool',
+      default: 'True',
+      description: 'Boolean flag to toggle SQL statement execution logging.',
+    },
+    slow_query_threshold_ms: {
+      type: 'Optional[float]',
+      default: 'None',
+      description: 'Execution threshold in milliseconds to log slow SQL queries specifically.',
+    },
+    file_path: {
+      type: 'Optional[str]',
+      default: 'None',
+      description: 'Target filesystem path for rotating log files (10MB per file, 5 backups).',
+    },
+    muted_loggers: {
+      type: 'list[str]',
+      default: '["uvicorn", "uvicorn.access", "uvicorn.error", "sqlalchemy.engine"]',
+      description: 'List of external logger names whose outputs are suppressed.',
+    },
+    custom_processors: {
+      type: 'list[Any]',
+      default: '[]',
+      description: 'List of custom structlog processors to append to the pipeline.',
     }
   }}
 />

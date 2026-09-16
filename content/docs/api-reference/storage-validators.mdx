@@ -92,7 +92,7 @@ validator = MaxFileSizeValidator(
 
 ### `SafeMimeTypeValidator`
 
-MIME-type validator utilizing binary **Magic Byte verification**. Reads the first 2048 header bytes of the file to verify that the file's raw binary signature matches its declared format.
+MIME-type validator utilizing binary **Magic Byte verification**. Reads the first 8192 header bytes of the file to verify that the file's raw binary signature matches its declared format.
 
 ```python
 from zcore.storage import SafeMimeTypeValidator
@@ -117,12 +117,10 @@ validator = SafeMimeTypeValidator(
 />
 
 <Callout type="warn" emoji="🚨">
-  **Executable Injection Firewall:**
-  Before validating formats, `SafeMimeTypeValidator` inspects header bytes for high-risk script patterns:
-  * **PHP Blocks:** `<?php`
-  * **HTML/JS Injections:** `<script`
-  * **Windows Binaries:** `MZ` PE header
-  * **Unix Scripts:** `#!/`
+  **Executable & Injection Firewall:**
+  Before validating formats, `SafeMimeTypeValidator` inspects header bytes for high-risk binary headers and script patterns:
+  * **Executable Headers (`BLOCKED_HEADER_PREFIXES`):** Windows PE (`MZ`), Unix Shebang scripts (`#!/`), Linux ELF binaries (`\x7fELF`).
+  * **Malicious Content Patterns (`MALICIOUS_CONTENT_PATTERNS`):** Active scripts and XSS vectors including `<?php`, `<script`, `javascript:`, `vbscript:`, `data:text/html`, `<!doctype html`, `<html`, `<iframe>`, `<object>`, `<embed>`, DOM event attributes (`onload=`, `onerror=`, `onclick=`), and SVG xlink JavaScript links.
 
   Any file containing these execution signatures is immediately rejected with a critical security alert, regardless of its extension.
 </Callout>

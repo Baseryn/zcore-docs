@@ -85,7 +85,7 @@ def setup(self, app: FastAPI) -> None: ...
 
 ### `lifespan`
 
-Asynchronous context manager governing the active FastAPI application lifespan. Sequentially invokes startup lifecycle phases on sorted plugins and guarantees clean, reversed teardown triggers upon termination.
+Asynchronous context manager governing the active FastAPI application lifespan. Sequentially invokes startup lifecycle phases on sorted plugins and guarantees clean, reversed teardown triggers upon termination, including automatic database and cache connection disposal.
 
 ```python
 @asynccontextmanager
@@ -108,7 +108,7 @@ async def lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]: ...
 <Callout type="warn" emoji="⚠️">
   **Lifespan Execution Order:**
   * **Startup (Topological Order):** `before_startup` $\rightarrow$ `on_startup` $\rightarrow$ `after_startup`.
-  * **Shutdown (Reversed Topological Order):** `on_shutdown` is invoked in strictly reversed dependency order to ensure upstream resources remain available until dependents have closed cleanly.
+  * **Shutdown (Reversed Topological Order):** `on_shutdown` is invoked in strictly reversed dependency order to ensure upstream resources remain available until dependents have closed cleanly. Following plugin shutdowns, automatic teardown of the cache subsystem (`close_cache()`) and database engine (`db_manager.close()`) is performed.
 </Callout>
 
 ---

@@ -50,6 +50,11 @@ These attributes configure the scaffolded endpoints in your subclass:
       type: 'Type[BaseService] | Any',
       description: 'Business service class callable. Auto-wired via Injector.',
     },
+    pk_type: {
+      type: 'Type[Any] | None',
+      default: 'None',
+      description: 'Optional explicit primary key type. If None, auto-resolved from model metadata.',
+    },
     prefix: {
       type: 'str',
       default: '""',
@@ -101,7 +106,7 @@ from zcore import RouteKey
     },
     GET: {
       type: '"GET"',
-      description: 'Single entity lookup endpoint by UUID (GET /{id:uuid}).',
+      description: 'Single entity lookup endpoint by primary key (GET /{id}).',
     },
     GET_ALL: {
       type: '"GET_ALL"',
@@ -113,15 +118,15 @@ from zcore import RouteKey
     },
     UPDATE: {
       type: '"UPDATE"',
-      description: 'Full record update endpoint (PUT /{id:uuid}).',
+      description: 'Full record update endpoint (PUT /{id}).',
     },
     PATCH: {
       type: '"PATCH"',
-      description: 'Partial record modification endpoint (PATCH /{id:uuid}).',
+      description: 'Partial record modification endpoint (PATCH /{id}).',
     },
     DELETE: {
       type: '"DELETE"',
-      description: 'Single entity deletion endpoint (DELETE /{id:uuid}).',
+      description: 'Single entity deletion endpoint (DELETE /{id}).',
     }
   }}
 />
@@ -175,35 +180,35 @@ Subclasses can override the core endpoint execution methods to customize respons
 
 ### `create_endpoint`
 ```python
-async def create_endpoint(self, data_in: CreateSchemaType, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+async def create_endpoint(self, data_in: Any, service: BaseService) -> ResponseWrapper: ...
 ```
 
 ### `get_endpoint`
 ```python
-async def get_endpoint(self, id: uuid.UUID, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+async def get_endpoint(self, id: Any, service: BaseService) -> ResponseWrapper: ...
 ```
 
 ### `get_all_endpoint`
 ```python
-async def get_all_endpoint(self, service: BaseService, pagination: Any = None, **kwargs: Any) -> ResponseWrapper: ...
+async def get_all_endpoint(self, service: BaseService, pagination: Any = None) -> ResponseWrapper: ...
 ```
 
 ### `search_endpoint`
 ```python
-async def search_endpoint(self, search_in: SearchRequest, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper: ...
 ```
 
 ### `update_endpoint`
 ```python
-async def update_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+async def update_endpoint(self, id: Any, data_in: Any, service: BaseService) -> ResponseWrapper: ...
 ```
 
 ### `patch_endpoint`
 ```python
-async def patch_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+async def patch_endpoint(self, id: Any, data_in: Any, service: BaseService) -> ResponseWrapper: ...
 ```
 
 ### `delete_endpoint`
 ```python
-async def delete_endpoint(self, id: uuid.UUID, service: BaseService, **kwargs: Any) -> ResponseWrapper: ...
+async def delete_endpoint(self, id: Any, service: BaseService) -> ResponseWrapper: ...
 ```

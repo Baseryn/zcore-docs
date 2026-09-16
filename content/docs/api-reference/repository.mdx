@@ -174,16 +174,20 @@ Fetches a paginated or complete listing of records.
 ```python
 async def get_list(
     self, 
+    *criterion: Any,
     pagination: Any = None, 
     fields: Optional[List[Any]] = None, 
     options: Optional[List[ExecutableOption]] = None,
-    *criterion: Any,
     **filters: Any
 ) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
 ```
 
 <TypeTable
   type={{
+    '*criterion': {
+      type: 'Any',
+      description: 'Positional binary SQLAlchemy filter expressions.',
+    },
     pagination: {
       type: 'PageNumberParams | CursorParams | None',
       default: 'None',
@@ -198,10 +202,6 @@ async def get_list(
       type: 'List[ExecutableOption] | None',
       default: 'None',
       description: 'SQLAlchemy execution loader options.',
-    },
-    '*criterion': {
-      type: 'Any',
-      description: 'Positional binary SQLAlchemy filter expressions.',
     },
     '**filters': {
       type: 'Any',
@@ -295,7 +295,7 @@ async def create(self, schema: BaseModel, **extra_data: Any) -> ModelType: ...
 
 ### `create_multi`
 
-Performs high-performance bulk creation using an optimized `INSERT ... RETURNING` clause.
+Creates multiple database records with dialect-aware fallback for returning support.
 
 ```python
 async def create_multi(
@@ -314,23 +314,23 @@ async def create_multi(
     refresh: {
       type: 'bool',
       default: 'False',
-      description: 'Maintained for API signature backward compatibility.',
+      description: 'If True, executes an explicit database refresh on each record individually.',
     },
     returns: {
       type: 'Sequence[ModelType]',
-      description: 'A sequence of created database model instances returned directly via RETURNING.',
+      description: 'A sequence of created database model instances.',
     }
   }}
 />
 
 ### `update`
 
-Updates an existing record by primary key.
+Updates an existing database record from a model instance or primary key.
 
 ```python
 async def update(
     self, 
-    id: Any, 
+    target: ModelType | Any, 
     schema: BaseModel, 
     partial: bool = False, 
     **extra_data: Any
@@ -339,9 +339,9 @@ async def update(
 
 <TypeTable
   type={{
-    id: {
-      type: 'Any',
-      description: 'The primary key identifier of the target record to update.',
+    target: {
+      type: 'ModelType | Any',
+      description: 'The model instance or primary key identifier of the record to update.',
     },
     schema: {
       type: 'BaseModel',
@@ -350,7 +350,7 @@ async def update(
     partial: {
       type: 'bool',
       default: 'False',
-      description: 'If True, applies modifications as a PATCH (ignoring unset fields).',
+      description: 'If True, applies modifications as a partial patch (ignoring unset fields).',
     },
     '**extra_data': {
       type: 'Any',
@@ -365,12 +365,12 @@ async def update(
 
 ### `update_multi`
 
-Bulk updates multiple database records using direct DBAPI `executemany` execution without hydrating ORM entities beforehand, followed by a single batch fetch.
+Bulk updates multiple database records using DBAPI executemany.
 
 ```python
 async def update_multi(
     self, 
-    data: dict[Any, BaseModel], 
+    data: dict[ModelType | Any, BaseModel], 
     partial: bool = False, 
     refresh: bool = False
 ) -> Sequence[ModelType]: ...
@@ -379,18 +379,18 @@ async def update_multi(
 <TypeTable
   type={{
     data: {
-      type: 'dict[Any, BaseModel]',
-      description: 'A dictionary mapping target primary keys to their respective update schemas.',
+      type: 'dict[ModelType | Any, BaseModel]',
+      description: 'A mapping of model instances or primary keys to their update schemas.',
     },
     partial: {
       type: 'bool',
       default: 'False',
-      description: 'If True, fields omitted/unset in the schema payload are skipped.',
+      description: 'If True, ignores unset schema fields.',
     },
     refresh: {
       type: 'bool',
       default: 'False',
-      description: 'Maintained for backward compatibility.',
+      description: 'Maintained for interface consistency.',
     },
     returns: {
       type: 'Sequence[ModelType]',
@@ -401,17 +401,17 @@ async def update_multi(
 
 ### `delete`
 
-Deletes a single record by its primary key.
+Deletes a single record by its model instance or primary key identifier.
 
 ```python
-async def delete(self, id: Any) -> Optional[ModelType]: ...
+async def delete(self, target: ModelType | Any) -> Optional[ModelType]: ...
 ```
 
 <TypeTable
   type={{
-    id: {
-      type: 'Any',
-      description: 'The primary key value of the target record to delete.',
+    target: {
+      type: 'ModelType | Any',
+      description: 'The model instance or primary key value of the target record to delete.',
     },
     returns: {
       type: 'ModelType | None',
@@ -422,7 +422,7 @@ async def delete(self, id: Any) -> Optional[ModelType]: ...
 
 ### `delete_multi`
 
-Bulk deletes multiple records matching a list of primary keys in a single atomic SQL statement using `DELETE ... RETURNING`.
+Delete multiple records matching the provided list of primary keys with dialect-aware fallback.
 
 ```python
 async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
