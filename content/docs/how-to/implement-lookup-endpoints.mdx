@@ -1,0 +1,200 @@
+---
+title: How to implement a Lookup endpoint via BaseRouter
+description: Extend BaseRouter to create secure, lightweight lookup endpoints with field whitelisting for dropdowns and autocomplete components.
+icon: Search
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Dropdowns, select inputs, and autocomplete components in frontend applications often require lightweight search endpoints that expose only minimal identity fields (e.g., `id`, `name`, `code`) while preventing unauthorized querying of sensitive columns.
+
+By extending ZCore's `BaseRouter`, you can scaffold an authenticated `POST /lookup` endpoint with strict field whitelisting.
+
+---
+
+<Steps>
+  <Step>
+    ### 1. Create the Custom `AppBaseRouter`
+
+    Create a shared base router class that extends `BaseRouter` and conditionally registers the `/lookup` route whenever `lookup_schema` is defined:
+
+    ```python
+    # shared/base/router.py
+    from typing import Any, Generic, TypeVar
+    from fastapi import Depends, Request, status
+    from pydantic import BaseModel
+    from zcore import BaseRouter, ResponseWrapper, SearchRequest
+    from zcore.exceptions import ValidationError
+    from zcore.kernel import Injector
+    from zcore.security import BasePermission, UserProtocol
+
+    CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+    UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+
+
+    class IsAuthenticated(BasePermission):
+        async def has_permission(self, request: Request, user: UserProtocol) -> bool:
+            return bool(user and user.is_active)
+
+
+    class AppBaseRouter(
+        BaseRouter[CreateSchemaType, UpdateSchemaType],
+        Generic[CreateSchemaType, UpdateSchemaType]
+    ):
+        lookup_schema: type[BaseModel] | None = None
+        allowed_lookup_fields: set[str] | None = None
+
+        def _register_routes(self) -> None:
+            super()._register_routes()
+
+            if self.lookup_schema:
+                self._register_lookup_route()
+
+        def _validate_lookup_request(self, search_in: SearchRequest) -> None:
+            if not self.allowed_lookup_fields:
+                return
+
+            def validate_filters(items):
+                for f in items or []:
+                    if f.field and f.field not in self.allowed_lookup_fields:
+                        raise ValidationError(
+                            message=f"Field '{f.field}' is not allowed for lookup."
+                        )
+                    if f.items:
+                        validate_filters(f.items)
+
+            validate_filters(search_in.filters)
+
+            if search_in.sort:
+                for s in search_in.sort:
+                    if s.field not in self.allowed_lookup_fields:
+                        raise ValidationError(
+                            message=f"Sort field '{s.field}' is not allowed for lookup."
+                        )
+
+        def _register_lookup_route(self) -> None:
+            service_callable = self.service
+            service_dependency = Depends(Injector(service_callable))
+
+            async def _lookup_endpoint(
+                search_in: SearchRequest,
+                service_inst: Any = service_dependency,
+            ) -> ResponseWrapper:
+                self._validate_lookup_request(search_in)
+                return await self.search_endpoint(search_in, service_inst)
+
+            self.router.add_api_route(
+                path="/lookup",
+                endpoint=_lookup_endpoint,
+                methods=["POST"],
+                dependencies=self._get_lookup_dependencies(),
+                status_code=status.HTTP_200_OK,
+                response_model=ResponseWrapper[list[self.lookup_schema]],
+                tags=self.tags or [],
+            )
+
+            self.router.routes.sort(key=lambda r: "{" in r.path)
+
+        def _get_lookup_dependencies(self) -> list[Any]:
+            return [Depends(IsAuthenticated())]
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Define Minimal Lookup Schemas
+
+    Define lightweight DTOs exposing only public/identifying attributes required by frontend selectors:
+
+    ```python
+    # shared/schemas.py
+    import uuid
+    from pydantic import BaseModel, ConfigDict
+
+
+    class UserMinimalPublic(BaseModel):
+        id: uuid.UUID
+        first_name: str
+        last_name: str
+        personnel_code: str
+
+        model_config = ConfigDict(from_attributes=True)
+
+
+    class OrganizationMinimalPublic(BaseModel):
+        id: uuid.UUID
+        name: str
+        type: str
+
+        model_config = ConfigDict(from_attributes=True)
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Inherit from `AppBaseRouter` in Domain Routers
+
+    Declare `lookup_schema` and whitelist queryable fields via `allowed_lookup_fields`:
+
+    ```python
+    # modules/identity/routers.py
+    from typing import ClassVar
+    from shared.base.router import AppBaseRouter
+    from shared.schemas import UserMinimalPublic
+    from zcore.db import CursorPagination
+    from .models import Users
+    from .schemas import UserFullCreate, UserPublic, UserUpdate
+    from .services import UserService
+
+
+    class UsersRouter(AppBaseRouter[UserFullCreate, UserUpdate]):
+        model = Users
+        create_schema = UserFullCreate
+        update_schema = UserUpdate
+        schema_out = UserPublic
+        service = UserService
+        prefix = "/users"
+        tags: ClassVar[list[str]] = ["Users"]
+        pagination_class = CursorPagination
+
+        lookup_schema = UserMinimalPublic
+        allowed_lookup_fields: ClassVar[set[str]] = {
+            "first_name",
+            "last_name",
+            "personnel_code",
+            "username",
+            "job_title_id",
+        }
+
+
+    users_router = UsersRouter()
+    ```
+  </Step>
+
+  <Step>
+    ### 4. Client Request Example
+
+    Send search parameters to the `/lookup` endpoint. Only whitelisted fields will be evaluated:
+
+    ```bash
+    curl -X POST "http://localhost:8000/identity/users/lookup" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <token>" \
+      -d '{
+        "filters": [
+          { "field": "personnel_code", "op": "startswith", "value": "EMP-" }
+        ],
+        "sort": [
+          { "field": "last_name", "order": "asc" }
+        ],
+        "size": 20
+      }'
+    ```
+
+    If a client attempts to filter or sort by a non-whitelisted attribute (e.g. `password_hash` or `salary`), `_validate_lookup_request` immediately raises a `400 Bad Request` `ValidationError`.
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🛡️">
+  **Security Assurance:**
+  `_validate_lookup_request` evaluates recursive `AND`/`OR` groups in `search_in.filters` and verifies that every referenced column is explicitly declared in `allowed_lookup_fields`.
+</Callout>

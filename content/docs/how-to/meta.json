@@ -8,6 +8,7 @@
     "register-singleton-vs-scoped",
     "run-background-tasks",
     "override-repository",
+    "implement-lookup-endpoints",
     "use-scope-query",
     "implement-cursor-pagination",
     "build-complex-search",
