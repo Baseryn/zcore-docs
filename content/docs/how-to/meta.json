@@ -9,6 +9,7 @@
     "run-background-tasks",
     "override-repository",
     "implement-lookup-endpoints",
+    "inter-module-contracts-and-wiring",
     "use-scope-query",
     "implement-cursor-pagination",
     "build-complex-search",

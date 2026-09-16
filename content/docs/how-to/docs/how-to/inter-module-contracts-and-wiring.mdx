@@ -1,0 +1,224 @@
+---
+title: How to structure inter-module contracts and dependency wiring
+description: Decouple domain modules using Python Protocols, shared contracts, DI container wiring, and explicit Upstream/Downstream boundaries.
+icon: Cable
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+In a **Modular Monolith** architecture, modules often need data or business validation from other domains. Direct cross-module imports (e.g., importing `UserService` or `Users` model directly into `CRMService`) create circular dependency traps and high coupling.
+
+ZCore resolves this using a 4-tier pattern:
+1. **Contracts (Protocols):** Abstract interfaces defined in `shared/contract/`.
+2. **Wiring (Dependencies):** FastAPI `Annotated` dependency definitions in `shared/wiring/`.
+3. **Upstream/Downstream Dependency Resolution:** Declared in `Plugin.dependencies`.
+4. **IoC Binding:** Mapping protocols to concrete implementations in `Plugin.setup()`.
+
+---
+
+<Steps>
+  <Step>
+    ### 1. Define the Abstract Contract (`shared/contract/`)
+
+    Define a Python `typing.Protocol` representing the methods exposed by the upstream module to the rest of the application:
+
+    ```python
+    # shared/contract/auth/users.py
+    import uuid
+    from typing import Any, Optional, Protocol
+    from zcore.db import PaginatedResult
+
+
+    class UserValidator(Protocol):
+        async def get(self, id: uuid.UUID) -> Optional[Any]: ...
+        async def get_list(self, params: Any) -> PaginatedResult: ...
+    ```
+
+    ```python
+    # shared/contract/crm/contacts.py
+    import uuid
+    from typing import Any, Optional, Protocol
+
+
+    class Contacts(Protocol):
+        async def validate_contact(self, id: uuid.UUID | None) -> None: ...
+        async def create(self, schema: Any) -> Any: ...
+        async def update(self, id: uuid.UUID, schema: Any, partial: bool = False) -> Any: ...
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Create the Dependency Wiring (`shared/wiring/`)
+
+    Create an `Annotated` type alias in `shared/wiring/` that resolves the contract from the IoC container via `Depends`:
+
+    ```python
+    # shared/wiring/auth.py
+    from typing import Annotated
+    from fastapi import Depends
+    from shared.contract.auth.users import UserValidator
+    from zcore import container
+
+
+    async def get_user_contract() -> UserValidator:
+        return container.resolve(UserValidator)
+
+
+    UserContractDep = Annotated[UserValidator, Depends(get_user_contract)]
+    ```
+
+    ```python
+    # shared/wiring/crm.py
+    from typing import Annotated
+    from fastapi import Depends
+    from shared.contract.crm.contacts import Contacts
+    from zcore import container
+
+
+    async def get_contact_contract() -> Contacts:
+        return container.resolve(Contacts)
+
+
+    ContactContractDep = Annotated[Contacts, Depends(get_contact_contract)]
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Implement the Contract in the Upstream Service
+
+    The upstream service (`UserService` or `ContactService`) implements the business logic matching the protocol:
+
+    ```python
+    # modules/crm/service.py
+    import uuid
+    from zcore import BaseService
+    from zcore.exceptions import EntityNotFound
+    from .models import Contacts
+    from .repository import ContactRepository
+    from .schemas import ContactCreate, ContactUpdate
+
+
+    class ContactService(BaseService[Contacts]):
+        def __init__(self, repository: ContactRepository):
+            super().__init__(Contacts, repository)
+
+        async def validate_contact(self, id: uuid.UUID | None) -> None:
+            if id is not None and not await self.repository.exist(id=id):
+                raise EntityNotFound(message="Contact not found.")
+    ```
+  </Step>
+
+  <Step>
+    ### 4. Register the Interface in `Plugin.setup()`
+
+    In the upstream module's `Plugin`, bind the protocol to the concrete service in the IoC container:
+
+    ```python
+    # modules/crm/plugin.py
+    from typing import ClassVar
+    from fastapi import FastAPI
+    from shared.contract.crm.contacts import Contacts as ContactsProtocol
+    from zcore import Plugin, container
+    from .service import ContactService
+
+
+    class CRMPlugin(Plugin):
+        name = "crm"
+        version = "0.1.0"
+        dependencies: ClassVar[list[str]] = []
+
+        def setup(self, app: FastAPI) -> None:
+            # Register the abstract protocol to the concrete service
+            container.register_scoped(ContactsProtocol, ContactService)
+            container.register_scoped(ContactService, ContactService)
+    ```
+  </Step>
+
+  <Step>
+    ### 5. Consume the Contract in Downstream Modules
+
+    The downstream module (`IdentityPlugin` or `DoctorService`) declares the upstream plugin in `dependencies` and injects `ContactContractDep`:
+
+    ```python
+    # modules/identity/plugin.py
+    from typing import ClassVar
+    from fastapi import FastAPI
+    from zcore import Plugin
+
+
+    class IdentityPlugin(Plugin):
+        name = "identity"
+        version = "0.1.0"
+        # Declares that CRM must start and register its contracts first
+        dependencies: ClassVar[list[str]] = ["crm"]
+
+        def setup(self, app: FastAPI) -> None:
+            ...
+    ```
+
+    ```python
+    # modules/identity/services.py
+    from shared.wiring.crm import ContactContractDep
+    from zcore import BaseService
+    from .models import Users
+    from .repositories import UserRepository
+    from .schemas import UserCreate
+
+
+    class UserService(BaseService[Users]):
+        def __init__(
+            self,
+            repository: UserRepository,
+            contact_contract: ContactContractDep,
+        ):
+            super().__init__(Users, repository)
+            self.contact_contract = contact_contract
+
+        async def pre_create(self, schema: UserCreate) -> None:
+            # Validates or creates contacts via the contract without direct model imports!
+            if schema.contact_id:
+                await self.contact_contract.validate_contact(schema.contact_id)
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Decoupled Side-Effects via `EventDispatcher`
+
+When an action in one module requires side-effects or safety checks across other domains (e.g., preventing contact deletion if linked to a User or Doctor), use `EventDispatcher`:
+
+```python
+# 1. Dispatch event in upstream service
+class ContactService(BaseService[Contacts]):
+    async def pre_delete(self, target: Contacts | Any) -> None:
+        contact = target if isinstance(target, Contacts) else await self.get(id=target)
+        await self.dispatcher.dispatch(
+            "crm.before_contact_delete",
+            {"contact_id": contact.id}
+        )
+```
+
+```python
+# 2. Subscribe in downstream plugin
+# modules/identity/plugin.py
+async def handle_contact_delete_for_users(payload: dict) -> None:
+    service = container.resolve(UserService)
+    await service.handle_before_contact_delete(payload)
+
+
+class IdentityPlugin(Plugin):
+    async def before_startup(self) -> None:
+        dispatcher = container.resolve(EventDispatcher)
+        dispatcher.subscribe(
+            "crm.before_contact_delete",
+            handle_contact_delete_for_users
+        )
+```
+
+<Callout type="info" emoji="📐">
+  **Architectural Rule:**
+  * Downstream modules import **Protocols** (`shared/contract/`) and **Wiring** (`shared/wiring/`), never internal models or repositories of upstream modules.
+  * The `Kernel` uses `Plugin.dependencies` to guarantee that upstream plugins initialize their IoC bindings before downstreams resolve them.
+</Callout>
