@@ -44,7 +44,7 @@ const pillars = [
   {
     icon: <ShieldIcon />,
     title: 'Context Shielding (Zchema)',
-    description: 'Write one schema. Sensitive fields are pruned dynamically per-user in real-time.',
+    description: 'Eliminate role-based duplicate schemas. Sensitive fields are pruned dynamically per-user in real-time.',
     color: 'text-emerald-500'
   },
   {
@@ -73,9 +73,9 @@ const tools = [
     badge: '🟢 Independent',
     name: 'Inject[T]',
     oneLine: 'Type-safe constructor dependency injection mapped directly to FastAPI Depends.',
-    code: `class TaskService:
-    def __init__(self, repo: Inject[Repo]):
-        self.repo = repo`,
+    code: `@router.get("/tasks")
+async def list_tasks(service: Inject[TaskService]):
+    return await service.get_list()`,
     without: 'FastAPI Depends(get_task_repo) chains',
   },
   {
@@ -84,7 +84,7 @@ const tools = [
     name: 'background_task',
     oneLine: 'Isolate background scopes, auto-inject IoC dependencies, and manage database sessions safely.',
     code: `@background_task
-async def sync_data(task_id: uuid.UUID, service: Inject[TaskService]):
+async def sync_data(task_id: uuid.UUID, service: TaskService):
     await service.process(task_id)`,
     without: 'Manual session lifecycle and context leakage in BackgroundTasks',
   },
@@ -115,7 +115,7 @@ async def handle(payload):
     oneLine: 'Secure file storage armed with Magic Byte checking and Directory Traversal blocking.',
     code: `storage = LocalStorageProvider(
     "./uploads",
-    [SafeMimeTypeValidator()]
+    validators=[SafeMimeTypeValidator(["image/png", "image/jpeg"])]
 )`,
     without: 'Insecure custom file streaming',
   },
@@ -134,8 +134,8 @@ async def handle(payload):
     badge: '🟢 Independent',
     name: 'Pagination',
     oneLine: 'High-performance Cursor (Keyset) and Offset pagination with zero boilerplate.',
-    code: `paginator = CursorPagination(cursor_field="id")
-result = await repo.get_list(pagination=paginator)`,
+    code: `params = CursorParams(size=20)
+result = await repo.get_list(pagination=params)`,
     without: 'Manual offset/limit calculations',
   },
   {
@@ -173,10 +173,11 @@ query = engine.build_query(req)`,
     badge: '🔴 Orchestrated',
     name: 'BaseRouter',
     oneLine: 'Generates 7 secure endpoints. Fully overridable CRUD handlers with custom route injection.',
-    code: `class TaskRouter(
-    BaseRouter[TaskCreate, TaskUpdate]
-):
+    code: `class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
     model = Task
+    create_schema = TaskCreate
+    update_schema = TaskUpdate
+    schema_out = TaskResponse
     service = TaskService`,
     without: '7 redundant endpoint functions',
   },
@@ -223,7 +224,7 @@ async def create_task(data: TaskCreate, repo: Inject[TaskRepo]):
     step: 2,
     title: 'Now add BaseService (Optional)',
     code: `class TaskService(BaseService[Task]):
-    def __init__(self, repo: Inject[TaskRepo]):
+    def __init__(self, repo: TaskRepo):
         super().__init__(model=Task, repository=repo)
 
     async def pre_create(self, schema: TaskCreate):
