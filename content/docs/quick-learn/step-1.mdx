@@ -65,7 +65,7 @@ In this first step, we will set up the foundation of our project. ZCore is desig
   <Step>
     ### Understand the Settings Class
 
-    Open `main.py`. You will see that ZCore imports `settings` from `zcore.config`. This `settings` object is a `SettingsProxy` that reads from your `.env` file using Pydantic V2 Settings.
+    Open `main.py`. You will see that ZCore imports `settings` from `zcore`. This `settings` object is a `SettingsProxy` that reads from your `.env` file using Pydantic V2 Settings.
 
     ```python
     # main.py (excerpt)
@@ -73,7 +73,7 @@ In this first step, we will set up the foundation of our project. ZCore is desig
 
     # ZCore reads DATABASE_URL, SECRET_KEY, DEBUG, etc., automatically
     print(settings.PROJECT_NAME)
-    print(settings.DATABASE_URL)
+    print(settings.DATABASE.url)
     ```
 
     <Callout type="info" emoji="💡">
