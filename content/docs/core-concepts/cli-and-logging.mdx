@@ -33,25 +33,84 @@ zc genenv --force -o .env.production.example
 
 Standard FastAPI, Uvicorn, and SQLAlchemy logging often outputs unformatted, duplicated text streams that are difficult to parse in log aggregators.
 
-ZCore's `setup_logging()` intercepts and unifies this pipeline:
+ZCore's `setup_logging()` intercepts and unifies this pipeline through `ProcessorFormatter`:
 
 <Mermaid chart="graph TB
-    Uvicorn[Uvicorn Logs] --> Clear[Clear Default Handlers]
+    Uvicorn[Uvicorn Logs] --> Clear[Clear Muted Handlers]
     SQL[SQLAlchemy Queries] --> Clear
     App[App & Service Logs] --> Clear
     Clear --> Struct[Unified structlog Engine]
     Struct --> Context[structlog.contextvars merge request_id]
-    Context --> Mode{settings.DEBUG?}
-    Mode -- True --> Dev[ConsoleRenderer + rich.traceback]
-    Mode -- False --> Prod[JSONRenderer for Grafana/Datadog]"/>
+    Context --> Mode{json_format or not DEBUG?}
+    Mode -- False --> Dev[ConsoleRenderer + rich.traceback]
+    Mode -- True --> Prod[JSONRenderer for Grafana/Datadog]"/>
 
-1. **Suppression of Duplicate Stream Handlers:** Clears default stream handlers from `uvicorn`, `uvicorn.access`, and `sqlalchemy.engine`, setting `propagate = True` to channel all records into `structlog`.
-2. **Contextual Distributed Tracing:** `RequestLogMiddleware` extracts or generates an `x-request-id` header and binds it via `structlog.contextvars.bind_contextvars(request_id=...)`. Every log message emitted across repositories, services, or events automatically includes the unique `request_id`.
+1. **Suppression of Duplicate Stream Handlers:** Clears default stream handlers from configured loggers in `muted_loggers` (default: `uvicorn`, `uvicorn.access`, `uvicorn.error`, and `sqlalchemy.engine`), setting `propagate = True` to channel all records into `structlog`.
+2. **Contextual Distributed Tracing:** `RequestLogMiddleware` extracts or generates an `x-request-id` header (validated against `^[a-zA-Z0-9\-\.\_\:]{8,64}$`), binds it via `structlog.contextvars.bind_contextvars(request_id=...)`, and appends the correlation ID to response headers. Every log message emitted across repositories, services, or events automatically includes the unique `request_id`, while HTTP requests log `status_code`, `client_ip`, and `duration_ms`.
 3. **Adaptive Output Rendering:**
-   * **Development (`DEBUG = True`):** Colorized, human-readable console rendering with formatted tracebacks via `rich.traceback`.
-   * **Production (`DEBUG = False`):** Serialized, high-throughput JSON records containing ISO timestamps, log levels, and contextual metadata, ready for ingestion by Grafana Loki, ELK, or Datadog.
+   * **Development (`DEBUG = True` or `json_format = False`):** Colorized, human-readable console rendering with formatted tracebacks via `rich.traceback`.
+   * **Production (`DEBUG = False` or `json_format = True`):** Serialized, high-throughput JSON records containing ISO timestamps, log levels, and contextual metadata, ready for ingestion by Grafana Loki, ELK, or Datadog.
+
+### Declarative Configuration (`LoggingSettings`)
+
+Logging can be configured declaratively through `Settings.LOGGING` using the `LoggingSettings` schema or overridden directly in `setup_logging()`:
+
+```python
+from zcore.config import LoggingSettings, Settings
+
+class AppSettings(Settings):
+    LOGGING: LoggingSettings = LoggingSettings(
+        level="INFO",
+        json_format=None,
+        log_sql_queries=True,
+        slow_query_threshold_ms=200.0,
+        file_path="./logs/app.log",
+        muted_loggers=["uvicorn", "uvicorn.access", "uvicorn.error", "sqlalchemy.engine"],
+        custom_processors=[]
+    )
+```
+
+### Advanced `setup_logging` Overrides
+
+`setup_logging()` supports programmatic configuration, file rotation, custom processors, extra standard library handlers, and complete `dictConfig` overrides:
+
+```python
+from zcore.logging import setup_logging, LoggingSettings
+import logging
+
+# 1. Zero-code initialization (reads from settings.LOGGING)
+setup_logging()
+
+# 2. Programmatic LoggingSettings or dict config
+setup_logging(
+    config=LoggingSettings(
+        level="DEBUG",
+        file_path="./logs/app.log",  # Automatic RotatingFileHandler (10MB, 5 backups)
+        slow_query_threshold_ms=100.0
+    )
+)
+
+# 3. Custom processors and extra handlers
+setup_logging(
+    custom_processors=[my_structlog_processor],
+    extra_handlers=[logging.StreamHandler()],
+    log_level="DEBUG"
+)
+
+# 4. Full logging.config.dictConfig override
+setup_logging(
+    dict_config={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "handlers": {
+            "console": {"class": "logging.StreamHandler", "level": "INFO"}
+        },
+        "root": {"handlers": ["console"], "level": "INFO"}
+    }
+)
+```
 
 <Callout type="info" emoji="⚡">
   **SQL Query Diagnostics:**
-  `DatabaseManager` hooks directly into SQLAlchemy cursor lifecycle events (`before_cursor_execute` and `after_cursor_execute`). It logs clean, sanitized SQL statements along with execution durations in milliseconds (`duration_ms`), while automatically filtering out internal schema catalog noise.
+  `DatabaseManager` hooks directly into SQLAlchemy cursor lifecycle events (`before_cursor_execute` and `after_cursor_execute`). When `log_sql_queries` is enabled, it logs clean, sanitized SQL statements along with execution durations in milliseconds (`duration_ms`), while automatically filtering out internal schema catalog noise. If `slow_query_threshold_ms` is configured, queries completing below the threshold are suppressed.
 </Callout>

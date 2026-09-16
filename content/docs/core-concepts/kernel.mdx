@@ -80,6 +80,8 @@ Upon application termination, the Kernel executes `on_shutdown()` in **reverse t
 
 If `AuthPlugin` started before `TasksPlugin`, then `TasksPlugin` will shut down **before** `AuthPlugin`. This prevents orphaned state transitions or database errors if `TasksPlugin` attempts to write audit logs during shutdown.
 
+Once all plugins have safely completed their shutdown hooks, the Kernel automatically releases framework resources by closing active cache connections (`close_cache()`) and disposing the database engine pool (`db_manager.close()`).
+
 ---
 
 ## 4. Centralized Event Dispatching

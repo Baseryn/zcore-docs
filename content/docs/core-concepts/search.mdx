@@ -20,7 +20,7 @@ When a `SearchRequest` payload is received (typically via `POST /search`), the `
     Exp --> Exec[3. SQLAlchemy Execution & Pagination]"/>
 
 1. **Validation & Security Assertion:** Inspects all requested field paths, sort columns, and inclusion routes against `ctx.restricted_fields` and schema mappers.
-2. **Expression Building:** Recursively translates structured JSON operators (`eq`, `ne`, `gt`, `ilike`, `in`, `is_null`, `and`, `or`) into SQLAlchemy binary comparison clauses.
+2. **Expression Building & Type Coercion:** Recursively translates structured JSON operators (`eq`, `ne`, `gt`, `lt`, `ge`, `le`, `ilike`, `contains`, `startswith`, `endswith`, `in`, `between`, `is_null`, `and`, `or`) into SQLAlchemy binary comparison clauses while safely coercing values (`int`, `float`, `date`, `datetime`, `UUID`, `bool`, and `set`).
 3. **Execution & Eager-Loading:** Injects relation loaders (`joinedload` / `selectinload`), applies sorting, and passes the query to the repository paginator.
 
 ---
@@ -53,8 +53,8 @@ Malicious clients can craft massive, deeply nested `AND`/`OR` trees or infinite 
 
 ZCore enforces hard boundaries during the validation sweep:
 
-* **Filter Nesting Depth:** Recursive filter structures are limited to a maximum depth of **3 levels**. Exceeding this raises a `ValidationError("Search query filter structure is too complex.")`.
-* **Relation Include Depth:** The `include` array is strictly bounded to a maximum depth of **3 relation hops** (e.g., `["organization.owner.profile"]`).
+* **Filter Nesting Depth:** Recursive filter structures are limited to a default maximum depth of **3 levels** (configurable per model via `__max_search_depth__`). Exceeding this raises a `ValidationError("Search query filter structure is too complex.")`.
+* **Relation Include Depth:** The `include` array is strictly bounded to the maximum depth limit (e.g., `["organization.owner.profile"]`).
 
 ---
 
@@ -67,7 +67,7 @@ The `include` parameter allows clients to request relational graphs dynamically 
 
 ---
 
-## 5. Relational Dot-Path Resolution
+## 5. Relational Dot-Path Resolution & Type Safety
 
 When filtering across foreign relations (e.g., `{ "field": "author.email", "op": "eq", "value": "test@core.com" }`), the engine resolves the target model dynamically:
 
@@ -75,6 +75,7 @@ When filtering across foreign relations (e.g., `{ "field": "author.email", "op":
 * For **To-Many** relations: Compiles to `Model.comments.any(Comment.status == "approved")`.
 
 <Callout type="info" emoji="⚡">
-  **SQL Injection & Wildcard Sanitization:**
-  All `ilike` operations automatically escape SQL wildcard characters (`%`, `_`, `\`) to prevent query distortion or wildcard injection attacks.
+  **Wildcard Sanitization & Automatic Type Casting:**
+  * All text operators (`ilike`, `contains`, `startswith`, `endswith`) automatically escape SQL wildcard characters (`%`, `_`, `\`) to prevent query distortion or wildcard injection attacks.
+  * When applying text-matching operators to non-string columns (e.g., searching numeric IDs or UUIDs), the engine automatically applies `cast(col, String)` to guarantee safe and valid SQL execution.
 </Callout>

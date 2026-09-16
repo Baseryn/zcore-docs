@@ -103,13 +103,14 @@ ZCore provides two utilities for safe background processing:
 
 ### A. The `@background_task` Decorator
 
-Decorate any asynchronous or synchronous background worker. The decorator:
+Decorate any asynchronous coroutine or standard synchronous function. The decorator:
 1. Spawns an isolated `background_scope()`.
 2. Automatically allocates a fresh, dedicated `AsyncSession`.
 3. Inspects the function's signature and auto-resolves any missing type-annotated dependencies via `container.resolve()`.
+4. Executes synchronous functions in a dedicated worker threadpool via `anyio.to_thread.run_sync`.
 
 ```python
-from zcore.kernel import background_task
+from zcore import background_task
 from tasks.services import TaskService
 
 @background_task
@@ -118,12 +119,16 @@ async def send_welcome_email(user_id: uuid.UUID, service: TaskService):
     await service.notify(user_id)
 ```
 
+<Callout type="warn" emoji="⚠️">
+  **Avoid Passing Active Request Sessions:** Do not pass an existing `AsyncSession` from an HTTP route directly into a background task. The request session will be closed when the HTTP response completes. Let `@background_task` inject an isolated session automatically; passing an active session triggers a runtime logger warning.
+</Callout>
+
 ### B. The `background_scope` Context Manager
 
 For manual execution blocks, `background_scope` provides explicit boundary control:
 
 ```python
-from zcore.kernel import background_scope
+from zcore import background_scope
 
 async with background_scope(inherit_context=True, custom_flag="worker"):
     # Clean, isolated IoC and DB session lifecycle
