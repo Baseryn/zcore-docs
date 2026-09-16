@@ -1,6 +1,8 @@
 {
   "pages": [
     "extend-settings",
+    "configure-database-and-logging",
+    "manage-timezones",
     "use-cli-commands",
     "wire-dependencies",
     "register-singleton-vs-scoped",
