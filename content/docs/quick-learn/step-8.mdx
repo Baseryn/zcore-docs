@@ -33,6 +33,8 @@ Instead of writing 7 redundant route functions for every model, ZCore's `BaseRou
         
         # Example: Exclude the DELETE endpoint
         exclude = {RouteKey.DELETE}
+    
+    router_instance = TaskRouter()
     ```
   </Step>
 
@@ -53,7 +55,7 @@ Instead of writing 7 redundant route functions for every model, ZCore's `BaseRou
         dependencies = [] # Can list other plugin names if needed
 
         def setup(self, app: FastAPI) -> None:
-            router_instance = TaskRouter()
+            from .routers import router_instance
             app.include_router(router_instance.router)
     ```
   </Step>

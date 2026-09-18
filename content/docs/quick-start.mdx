@@ -129,6 +129,17 @@ class TaskResponse(TaskBase):
 At this stage, you have a normal declarative model. You can stop right here and write raw SQLAlchemy queries using `AsyncSession`. 
 **Or** read on to see how ZCore can optionally reduce your boilerplate.
 
+<Callout type="info" emoji="💡">
+  **Tip:** Don't forget to include your domain's router inside the plugin's `setup` method:
+
+```python
+# plugin.py
+def setup(self, app: FastAPI) -> None:
+    from .routers import router_instance
+    app.include_router(router_instance.router)
+```
+</Callout>
+
 ---
 
 ## 5. Register the Plugin
@@ -144,17 +155,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI
-from zcore import Kernel, db_manager, register_db_event_dispatcher, settings
-from zcore.exceptions import AppException, app_exception_handler
-from zcore.logging import setup_logging
+from zcore import Kernel, settings
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
+from zcore.exceptions import app_exception_handler, AppException
+from zcore.db import db_manager, register_db_event_dispatcher
+from zcore.logging import setup_logging
 
 # Import your domain plugin
 from tasks.plugin import TaskPlugin  # <--- ADD THIS
 
 setup_logging()
-
-db_manager.init_app(config=settings.DATABASE)
+db_manager.init_app(
+    db_url=settings.DATABASE_URL,
+    pool_size=settings.POOL_SIZE,
+    max_overflow=settings.MAX_OVERFLOW,
+    echo=(settings.DEBUG)
+)
 
 kernel = Kernel()
 register_db_event_dispatcher(kernel.dispatcher)
@@ -166,22 +182,15 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     lifespan=kernel.lifespan
 )
-
 kernel.setup(app)
 
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(ScopedDependencyMiddleware)
-
 app.add_exception_handler(AppException, app_exception_handler)
 
 @app.get("/")
 async def root():
-    return {
-        "status": "healthy",
-        "framework": "ZCore",
-        "version": "0.1.0-rc.1",
-        "debug": settings.DEBUG
-    }
+    return {"status": "healthy", "framework": "ZCore", "debug": settings.DEBUG}
 ```
 
 ---
@@ -222,7 +231,7 @@ from .models import Task
 from .schemas import TaskCreate, TaskUpdate, TaskResponse
 from .services import TaskService
 
-class TaskRouter(BaseRouter):
+class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
     model = Task
     create_schema = TaskCreate
     update_schema = TaskUpdate
@@ -298,7 +307,7 @@ from zcore import BaseRepository
 from .models import Task
 from .schemas import TaskCreate, TaskUpdate
 
-class TaskRepository(BaseRepository[Task]):
+class TaskRepository(BaseRepository[Task, TaskCreate, TaskUpdate]):
     def __init__(self, db: AsyncSession):
         super().__init__(model=Task, db=db)
 ```
@@ -327,7 +336,7 @@ from .models import Task
 from .schemas import TaskCreate, TaskUpdate
 from .repositories import TaskRepository
 
-class TaskService(BaseService[Task]):
+class TaskService(BaseService[Task, TaskCreate, TaskUpdate]):
     def __init__(self, repository: TaskRepository):
         super().__init__(model=Task, repository=repository)
 
