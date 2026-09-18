@@ -17,7 +17,7 @@ import {
 export default function CustomSearchDialog(props: SharedProps) {
   const { search, setSearch, query } = useDocsSearch({
     client: staticClient({
-      from: '/zcore-docs/api/search',
+      from: '/api/search',
     }),
   });
 
