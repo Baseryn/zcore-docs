@@ -7,7 +7,7 @@ icon: HardDrive
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`LocalStorageProvider` implements storage operations targeting the host filesystem. It defends against path traversal attacks by enforcing strict path bounds checks and evaluates uploaded files through configurable security validators.
+`LocalStorageProvider` implements storage operations targeting the host filesystem. It defends against path traversal attacks by enforcing strict path bounds checks, generates high-entropy collision-free identifiers, resolves web-accessible URL paths dynamically, and evaluates uploaded files through configurable security validators.
 
 ## Class Definition
 
@@ -18,7 +18,8 @@ from zcore.storage import LocalStorageProvider, StorageProvider, BaseStorageVali
 class LocalStorageProvider(StorageProvider):
     def __init__(
         self, 
-        base_path: str, 
+        base_path: str = "./storage", 
+        url_prefix: str = "/storage", 
         validators: Optional[List[BaseStorageValidator]] = None
     ) -> None:
         ...
@@ -32,7 +33,13 @@ class LocalStorageProvider(StorageProvider):
   type={{
     base_path: {
       type: 'str',
-      description: 'The absolute or relative root filesystem path designated for file uploads.',
+      default: '"./storage"',
+      description: 'The root directory reserved for file uploads.',
+    },
+    url_prefix: {
+      type: 'str',
+      default: '"/storage"',
+      description: 'The normalized HTTP URL prefix mapped to exposed static assets.',
     },
     validators: {
       type: 'List[BaseStorageValidator] | None',
@@ -51,7 +58,7 @@ class LocalStorageProvider(StorageProvider):
 Uploads an incoming file to the local directory. Runs configured validators, generates a collision-resistant UUID filename, and asynchronously streams chunks to disk.
 
 ```python
-async def upload(self, file: UploadFile, related_type: str) -> str: ...
+async def upload(self, file: UploadFile, folder: str = "") -> str: ...
 ```
 
 <TypeTable
@@ -60,13 +67,14 @@ async def upload(self, file: UploadFile, related_type: str) -> str: ...
       type: 'UploadFile',
       description: 'The FastAPI UploadFile payload to validate and persist.',
     },
-    related_type: {
+    folder: {
       type: 'str',
-      description: 'Category identifier mapping to subfolder structures (e.g., "avatars" or "documents").',
+      default: '""',
+      description: 'Subdirectory categorization partition (e.g., "avatars" or "documents").',
     },
     returns: {
       type: 'str',
-      description: 'The resolved local filesystem path of the saved file. Raises AppException on traversal or save failures.',
+      description: 'The normalized web URL path of the saved file. Raises AppException on traversal or save failures.',
     }
   }}
 />
@@ -80,7 +88,7 @@ async def upload_stream(
     self, 
     file_stream: AsyncGenerator[bytes, None], 
     filename: str, 
-    related_type: str
+    folder: str = ""
 ) -> str: ...
 ```
 
@@ -92,32 +100,33 @@ async def upload_stream(
     },
     filename: {
       type: 'str',
-      description: 'Target filename to extract extension from.',
+      description: 'Target filename to assign to the streamed asset.',
     },
-    related_type: {
+    folder: {
       type: 'str',
-      description: 'Category identifier mapping to subfolder structures.',
+      default: '""',
+      description: 'Subdirectory categorization partition.',
     },
     returns: {
       type: 'str',
-      description: 'The resolved local filesystem path of the saved file.',
+      description: 'The normalized web URL path of the saved file.',
     }
   }}
 />
 
 ### `delete`
 
-Securely removes a file from local storage. Asserts that the target path resides within `base_path` before unlinking to prevent arbitrary file deletion exploits.
+Securely removes a file from local storage using its physical path or web URL. Asserts that the target path resides within `base_path` before unlinking to prevent arbitrary file deletion exploits.
 
 ```python
-async def delete(self, file_path: str) -> bool: ...
+async def delete(self, file_path_or_url: str) -> bool: ...
 ```
 
 <TypeTable
   type={{
-    file_path: {
+    file_path_or_url: {
       type: 'str',
-      description: 'Relative or absolute local path of the file to remove.',
+      description: 'Stored web URL or relative/absolute path of the file to remove.',
     },
     returns: {
       type: 'bool',
@@ -126,32 +135,49 @@ async def delete(self, file_path: str) -> bool: ...
   }}
 />
 
-### `generate_path`
+### `exists`
 
-Generates a sanitized, collision-resistant destination path enforcing `is_relative_to(base)` bounds checks.
+Verifies the physical presence of an asset within the local storage sandbox using its web URL or relative path.
 
 ```python
-async def generate_path(self, filename: str, related_type: str) -> str: ...
+async def exists(self, file_path_or_url: str) -> bool: ...
 ```
 
 <TypeTable
   type={{
-    filename: {
+    file_path_or_url: {
       type: 'str',
-      description: 'The original filename used to extract the file extension.',
+      description: 'Stored web URL or relative path of the target file.',
     },
-    related_type: {
+    returns: {
+      type: 'bool',
+      description: 'True if the target file exists and is within storage boundaries, False otherwise.',
+    }
+  }}
+/>
+
+### `get_url`
+
+Resolves the normalized web-accessible URL for a stored asset.
+
+```python
+async def get_url(self, file_path_or_url: str) -> str: ...
+```
+
+<TypeTable
+  type={{
+    file_path_or_url: {
       type: 'str',
-      description: 'Subdirectory path namespace.',
+      description: 'Stored web URL or relative path of the target file.',
     },
     returns: {
       type: 'str',
-      description: 'The fully resolved destination path string on the local filesystem.',
+      description: 'The normalized web URL string.',
     }
   }}
 />
 
 <Callout type="warn" emoji="🛡️">
   **Path Traversal Prevention:**
-  `LocalStorageProvider` normalizes paths with `pathlib.PureWindowsPath` and asserts `.is_relative_to(base)`. Upload and delete operations attempting directory breakouts (e.g., `../../etc/passwd`) are blocked immediately.
+  `LocalStorageProvider` normalizes paths and validates sandbox boundaries against `base_path`. Operations attempting directory breakouts (e.g., `../../etc/passwd`) are blocked immediately.
 </Callout>

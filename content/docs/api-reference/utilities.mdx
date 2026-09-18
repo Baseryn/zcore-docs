@@ -1,13 +1,13 @@
 ---
 title: Utilities & Helpers
-description: API reference for JSON serialization, Draft-7 schema validation, text slugification, and database event bridges.
+description: API reference for JSON serialization, dynamic timezone management, Draft-7 schema validation, text slugification, and database event bridges.
 icon: Wrench
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore includes a collection of utility functions and serialization helpers designed to handle advanced Python data types, Draft-7 JSON Schema validation, URL-safe slug generation, and database-to-application event bridging.
+ZCore includes a collection of utility functions and serialization helpers designed to handle advanced Python data types, dynamic application timezones, Draft-7 JSON Schema validation, URL-safe slug generation, and database-to-application event bridging.
 
 ## 1. JSON Serialization & Parsing
 
@@ -52,12 +52,86 @@ def json_loads(s: str | bytes, **kwargs: Any) -> Any: ...
 
 ---
 
-## 2. JSON Schema Validation (`validate_json_schema`)
+## 2. Dynamic Timezone Management (`zcore.utils.timezone`)
+
+Provides timezone-aware datetime operations powered by Python's `zoneinfo` standard library, falling back to UTC if misconfigured or running across system platforms without native zoneinfo tables.
+
+```python
+from zcore.utils.timezone import (
+    now,
+    utc_now,
+    to_app_timezone,
+    get_app_timezone,
+    format_iso_with_app_timezone,
+    ZDateTime
+)
+```
+
+### `now`
+
+Returns the current timezone-aware `datetime` bound to the application's configured timezone (`settings.TIMEZONE`).
+
+```python
+def now() -> datetime: ...
+```
+
+### `utc_now`
+
+Returns the current timezone-aware `datetime` explicitly bound to UTC.
+
+```python
+def utc_now() -> datetime: ...
+```
+
+### `to_app_timezone`
+
+Converts any `datetime` object (naive or aware) to the application's configured timezone. Naive datetimes are assumed to be UTC before transformation.
+
+```python
+def to_app_timezone(dt: datetime | None) -> datetime | None: ...
+```
+
+<TypeTable
+  type={{
+    dt: {
+      type: 'Optional[datetime]',
+      description: 'The source datetime object to convert to application timezone.',
+    },
+    returns: {
+      type: 'Optional[datetime]',
+      description: 'The converted datetime instance in the application timezone, or None if input was None.',
+    }
+  }}
+/>
+
+### `format_iso_with_app_timezone`
+
+Converts a datetime to the application's timezone and outputs a standardized ISO 8601 string. Respects `settings.AUTO_CONVERT_TIMEZONE`.
+
+```python
+def format_iso_with_app_timezone(dt: datetime | None) -> str | None: ...
+```
+
+### `ZDateTime`
+
+Pydantic `Annotated` type wrapper for `datetime` attributes that automatically formats fields to ISO 8601 strings in the application's configured timezone during JSON response serialization.
+
+```python
+from pydantic import BaseModel
+from zcore.utils.timezone import ZDateTime
+
+class TaskResponse(BaseModel):
+    created_at: ZDateTime
+```
+
+---
+
+## 3. JSON Schema Validation (`validate_json_schema`)
 
 Validates arbitrary dictionary payloads or schema structures using the **Draft-7 JSON Schema** specification.
 
 ```python
-from zcore.utils.schema import validate_json_schema
+from zcore.utils.validators import validate_json_schema
 
 # Validate payload against a schema
 validate_json_schema(data={"name": "Task 1"}, schema=my_draft7_schema)
@@ -86,7 +160,7 @@ validate_json_schema(data=my_draft7_schema)
 
 ---
 
-## 3. Text & Type Utilities
+## 4. Text & Type Utilities
 
 ### `slugify`
 
@@ -125,7 +199,7 @@ class WebhookConfig(BaseModel):
 
 ---
 
-## 4. Database Event Bridge (`zcore.db.events`)
+## 5. Database Event Bridge (`zcore.db.events`)
 
 Provides a decoupled, non-blocking bridge between low-level database operations and the application's central `EventDispatcher`.
 

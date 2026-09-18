@@ -26,12 +26,13 @@ ZCore does not replace FastAPI; it runs alongside it to address common boilerpla
 |---|---|---|
 | **Underlying Engine** | Standard ASGI Web Framework | Standard ASGI Web Framework + Composable Utilities |
 | **Design Philosophy** | Minimalist, highly explicit | Minimalist, with optional architectural abstractions |
-| **Data Access (CRUD)** | Manual SQL or ORM execution per route | Automated inheritance via `BaseRepository` (with bulk `RETURNING`) |
+| **Data Access (CRUD)** | Manual SQL or ORM execution per route | Automated inheritance via `BaseRepository` (with dialect-aware `RETURNING` fallback & model/ID targets) |
 | **Dependency Injection** | Nested, parameter-level `Depends()` chains | Clean constructor auto-wiring via `Inject[T]` and `IoCContainer` |
 | **Field-Level Security** | Multiple separate Pydantic output schemas | Dynamic, role-based field pruning inside a single `Zchema` |
 | **Transactional Boundaries** | Manual `session.commit()` execution | Context-manager encapsulation via `UnitOfWork` (post-commit events) |
-| **Background Routines** | Manual session management (risks closed session errors) | `@background_task` / `background_scope` with auto-wired DI and fresh sessions |
-| **Soft Delete** | Manual query filtering per route | Built-in `SoftDeleteMixin` with automatic `scope_query` integration |
+| **Background Routines** | Manual session management (risks closed session errors) | `@background_task` / `background_scope` with auto-wired DI, session leak warnings, and fresh sessions |
+| **Soft Delete** | Manual query filtering per route | Built-in `SoftDeleteMixin` with timezone-aware timestamps and automatic `scope_query` integration |
+| **Structured Logging** | Manual configuration | Multi-tier `setup_logging` with `LoggingSettings`, rotating file logs, and query timing |
 | **Module Organization** | Undefined (User-driven) | Structured, topologically sorted domain modules (`Plugin`) |
 | **CLI & Scaffolding** | Manual file setup | Interactive Rich/Questionary TUI with `uv` & multi-DB drivers (`zc`) |
 
@@ -131,14 +132,15 @@ ZCore does not replace SQLAlchemy; it builds on top of it. However, it is import
 
 | Query Feature | Standalone SQLAlchemy | ZCore's `BaseRepository` |
 |---|---|---|
-| **Data Retrieval** | `session.execute(select(Model).where(...))` | `repo.get(id=id)` |
-| **Bulk Insert / Update** | Manual `insert().values().returning()` setup | `repo.create_multi()`, `repo.update_multi()` (bulk DBAPI executemany) |
-| **Soft Delete** | Manual filter per query | Inherit `SoftDeleteMixin` for automatic query scoping |
+| **Data Retrieval** | `session.execute(select(Model).where(...))` | `repo.get(id=id)` or `repo.get(Model.field == val)` |
+| **Mutations (Update/Delete)** | Requires query execution by primary key | `repo.update(target, schema)`, `repo.delete(target)` (accepts model instance or ID) |
+| **Bulk Insert / Update / Delete** | Manual `insert().values().returning()` setup | `repo.create_multi()`, `repo.update_multi()`, `repo.delete_multi()` with dialect-aware `RETURNING` fallback |
+| **Soft Delete** | Manual filter per query | Inherit `SoftDeleteMixin` for automatic query scoping with timezone support |
 | **Keyset Pagination** | Written manually per query | Built-in via `CursorPagination` and `CursorParams` (Base64 encoded) |
 | **Dynamic Search** | Hand-crafted filter parsing | Automated SQL compilation from `SearchRequest` payloads |
-| **Search Operators** | Manual operator translation | Built-in `between`, `contains`, `startswith`, `endswith`, `ilike`, `in`, `is_null` |
+| **Search Operators** | Manual operator translation | Built-in `between`, `contains`, `startswith`, `endswith`, `ilike`, `in`, `is_null` with non-string type casting |
 | **Search Security** | Manual validation required | Configurable `__max_search_depth__` and restricted field checking |
-| **Execution Hooks** | Hand-written or mapped via event listeners | Overridable `pre_create`, `post_delete` single/bulk service hooks |
+| **Execution Hooks** | Hand-written or mapped via event listeners | Overridable `pre_create`, `pre_update`, `post_delete` single/bulk service hooks |
 
 <Callout type="info" emoji="🔄">
   **No Obscurity:** `BaseRepository` does not wrap or obscure SQLAlchemy sessions. It executes standard async SQLAlchemy statements internally. You can override any method to write custom SQL queries whenever default patterns fall short.

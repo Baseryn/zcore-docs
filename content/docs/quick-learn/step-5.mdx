@@ -7,7 +7,7 @@ icon: ShieldCheck
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Instead of writing multiple Pydantic models for different user roles (e.g., `TaskPublic`, `TaskAdmin`), ZCore provides a single, role-aware `Zchema`.
+Instead of writing multiple Pydantic models for different user roles (e.g., `TaskResponsePublic`, `TaskResponseAdmin`), ZCore provides role-aware field projection through `Zchema`.
 
 <Steps>
   <Step>
@@ -47,9 +47,9 @@ Instead of writing multiple Pydantic models for different user roles (e.g., `Tas
     ```
 
     <Callout type="info" emoji="💡">
-      **Pro Tip: Single Schema Approach**
+      **Eliminating Role-Based Schema Duplication**
       
-      Thanks to `Zchema`'s bidirectional security (handling both inputs and outputs on the fly), you are **not** forced to maintain three separate models. Since it automatically sanitizes incoming fields (preventing Mass Assignment) and filters outgoing payloads dynamically, you can define **one single Pydantic schema** (e.g., `TaskSchema`) and reuse it across creation, updates, and responses!
+      `Zchema` eliminates the need to maintain duplicate schemas for different permission levels (such as `TaskCreatePublic` vs `TaskCreateAdmin` or `TaskResponseUser` vs `TaskResponseAdmin`). By dynamically sanitizing inputs (preventing Mass Assignment) and pruning response fields based on `ctx.restricted_fields`, a single schema definition per operation handles all authorization levels automatically.
     </Callout>
   </Step>
 

@@ -9,7 +9,7 @@ const inter = Inter({
   subsets: ['latin'],
 });
 
-const siteUrl = 'https://baseryn.github.io/zcore-docs';
+const siteUrl = 'https://zcore.baseryn.com';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -22,7 +22,13 @@ export const metadata: Metadata = {
   keywords: [
     'FastAPI',
     'ZCore',
+    'zcore',
     'FastAPI ZCore',
+    'Baseryn ZCore',
+    'baseryn zcore',
+    'ZCore Docs',
+    'zcore docs',
+    'ZCore Documentation',
     'FastAPI Framework',
     'Modular Monolith Python',
     'Clean Architecture Python',
@@ -36,6 +42,7 @@ export const metadata: Metadata = {
     'Soft Delete SQLAlchemy',
     'Ali Alf Ostovar',
     'Baseryn',
+    'baseryn',
   ],
   authors: [
     { name: 'Ali Alf Ostovar', url: 'https://github.com/alialfostovar' },
@@ -52,8 +59,8 @@ export const metadata: Metadata = {
     canonical: siteUrl,
     types: {
       'text/plain': [
-        { url: '/zcore-docs/llms.txt', title: 'LLM Index' },
-        { url: '/zcore-docs/llms-full.txt', title: 'Full LLM Documentation' },
+        { url: '/llms.txt', title: 'LLM Index' },
+        { url: '/llms-full.txt', title: 'Full LLM Documentation' },
       ],
     },
   },
@@ -132,8 +139,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <head>
-        <link rel="help" type="text/plain" href="/zcore-docs/llms.txt" title="LLM Documentation" />
-        <link rel="alternate" type="text/plain" href="/zcore-docs/llms-full.txt" title="Full LLM Documentation" />
+        <link rel="help" type="text/plain" href="/llms.txt" title="LLM Documentation" />
+        <link rel="alternate" type="text/plain" href="/llms-full.txt" title="Full LLM Documentation" />
       </head>
       <body className="flex flex-col min-h-screen">
         <Script

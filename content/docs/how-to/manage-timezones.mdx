@@ -1,0 +1,84 @@
+---
+title: How to manage Timezones and DateTime serialization
+description: Configure application-wide timezones, convert datetimes, and serialize timezone-aware outputs using ZDateTime.
+icon: Clock
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore provides timezone management built on Python's `zoneinfo` standard library, ensuring consistent UTC storage in databases and formatted timezone-aware outputs for API consumers.
+
+<Steps>
+  <Step>
+    ### 1. Configure the Application Timezone
+
+    Set your desired IANA timezone in `.env`:
+
+    ```dotenv
+    # .env
+    TIMEZONE="America/New_York"
+    AUTO_CONVERT_TIMEZONE=True
+    ```
+
+    Or declare it in your `Settings` subclass:
+
+    ```python
+    # config.py
+    from zcore.config import Settings
+
+    class AppSettings(Settings):
+        TIMEZONE: str = "Europe/London"
+        AUTO_CONVERT_TIMEZONE: bool = True
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Using Timezone Utilities in Code
+
+    Import timezone helpers directly from `zcore` or `zcore.utils.timezone`:
+
+    ```python
+    from zcore.utils.timezone import now, utc_now, to_app_timezone, format_iso_with_app_timezone
+
+    # Get current datetime in configured application timezone
+    local_time = now()
+
+    # Get current datetime in UTC
+    utc_time = utc_now()
+
+    # Convert a database datetime (naive or aware) to the application timezone
+    converted_time = to_app_timezone(task.created_at)
+
+    # Format datetime as ISO 8601 string with application timezone offset
+    iso_string = format_iso_with_app_timezone(task.created_at)
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Automatic Response Formatting with `ZDateTime`
+
+    Use the `ZDateTime` type annotation in your Pydantic schemas. When the schema is serialized to JSON, it is automatically converted and formatted to the application's timezone:
+
+    ```python
+    # schemas.py
+    import uuid
+    from datetime import datetime
+    from zcore import Zchema
+    from zcore.utils.timezone import ZDateTime
+
+    class TaskResponse(Zchema):
+        __model__ = "tasks"
+
+        id: uuid.UUID
+        title: str
+        created_at: ZDateTime
+        updated_at: ZDateTime | None = None
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="🌍">
+  **Timezone Fallback:**
+  If an invalid or unrecognized timezone string is configured, `get_app_timezone()` logs a warning and automatically falls back to `UTC`.
+</Callout>

@@ -21,18 +21,36 @@ ZCore solves this using `SettingsProxy`.
   This proxy intercepts all attribute lookups (via `__getattr__`) and dynamically resolves the active `Settings` singleton from the `IoCContainer` **only when an attribute is actually accessed**.
 </Callout>
 
-This guarantees that `settings.DATABASE_URL` or `settings.SECRET_KEY` can be safely imported anywhere in your codebase without premature execution.
+This guarantees that `settings.DATABASE.url`, `settings.DATABASE_URL`, or `settings.SECRET_KEY` can be safely imported anywhere in your codebase without premature execution.
+
+### Structured Settings Schemas
+Settings in ZCore are structured into dedicated sub-models for core subsystems:
+* **`DATABASE` (`DatabaseSettings`)**: Manages connection URL, pool sizing (`pool_size`, `max_overflow`), connection recycles (`pool_recycle`), health checks (`pool_pre_ping`), and engine parameters (`connect_args`, `execution_options`, `extra_engine_kwargs`).
+* **`LOGGING` (`LoggingSettings`)**: Manages log levels, formatters (`json_format`), SQL query logging (`log_sql_queries`), slow query thresholds (`slow_query_threshold_ms`), rotating log file destinations (`file_path`), and muted loggers (`muted_loggers`).
+* **Timezone Policies**: Global timezone configurations (`TIMEZONE="UTC"`) and automatic ISO serialization conversions (`AUTO_CONVERT_TIMEZONE=True`).
+
+<Callout type="info" emoji="🔄">
+  **Bidirectional Sync:** ZCore maintains backward compatibility by automatically synchronizing flat environment variables (such as `DATABASE_URL`, `POOL_SIZE`, `MAX_OVERFLOW`, and `LOG_LEVEL`) with their corresponding structured `DATABASE` and `LOGGING` models.
+</Callout>
 
 ### Extending Settings
-ZCore automatically binds your `Settings` instance into the IoC container. To add domain-specific variables, inherit from `Settings` and pass the instance to `initialize_settings` at the top of your `main.py`:
+ZCore automatically binds your `Settings` instance into the IoC container. To add domain-specific variables or configure structured sub-models, inherit from `Settings` and pass the instance to `initialize_settings` at the top of your `main.py`:
 
 ```python
 # main.py
-from zcore.config import Settings, initialize_settings
+from zcore.config import DatabaseSettings, LoggingSettings, Settings, initialize_settings
 
 class AppSettings(Settings):
     AWS_BUCKET: str = "default-bucket"
     EXTERNAL_API_KEY: str = ""
+    DATABASE: DatabaseSettings = DatabaseSettings(
+        url="postgresql+asyncpg://postgres:postgres@localhost:5432/production_db",
+        pool_size=20,
+    )
+    LOGGING: LoggingSettings = LoggingSettings(
+        level="DEBUG",
+        slow_query_threshold_ms=200.0,
+    )
 
 # Register the subclass into ZCore's IoC container
 initialize_settings(AppSettings())

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://baseryn.github.io/zcore-docs/">
+  <a href="https://zcore.baseryn.com">
     <img src="https://img.shields.io/badge/docs-live-emerald?style=flat&logo=gitbook&logoColor=white" alt="Live Docs">
   </a>
   <a href="https://github.com/Baseryn/zcore">
@@ -28,7 +28,7 @@
 
 This repository houses the source code, interactive landing page, and comprehensive architectural guides for **FastAPI ZCore Framework**.
 
-* 🚀 **Live Site:** [https://baseryn.github.io/zcore-docs/](https://baseryn.github.io/zcore-docs/)
+* 🚀 **Live Site:** [https://zcore.baseryn.com](https://zcore.baseryn.com)
 * 📦 **Core Framework Repo:** [https://github.com/Baseryn/zcore](https://github.com/Baseryn/zcore)
 * 🐍 **PyPI Package:** [fastapi-zcore-framework](https://pypi.org/project/fastapi-zcore-framework/)
 

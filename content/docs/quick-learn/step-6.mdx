@@ -32,8 +32,8 @@ Writing the same `SELECT`, `INSERT`, and `UPDATE` queries for every model is ted
 
     <Callout type="info" emoji="📦">
       **Out-of-the-box features:** By writing this empty class, `TaskRepo` now has access to:
-      * **CRUD:** `create`, `create_multi`, `get`, `get_by_ids`, `update`, `delete`
-      * **Batch Operations:** `update_multi`, `delete_multi`
+      * **CRUD & Lookups:** `create`, `create_multi`, `get`, `get_by_ids`, `exist`, `count`, `update`, `delete` (with direct primary key or model instance support)
+      * **Batch Operations:** `update_multi`, `delete_multi` (with dialect-aware returning fallbacks)
       * **Pagination:** `get_list` (supports both Page-Number and high-performance Cursor pagination)
       * **Dynamic Search:** `search` (compiles nested JSON filters into safe SQL with depth-limit protection)
       

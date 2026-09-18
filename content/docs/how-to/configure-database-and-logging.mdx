@@ -1,0 +1,167 @@
+---
+title: How to configure Database and Logging
+description: Configure asynchronous database engines with DatabaseSettings and customize structured logging with LoggingSettings and file rotation.
+icon: SlidersHorizontal
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+ZCore provides structured configuration schemas for the database engine (`DatabaseSettings`) and observability pipeline (`LoggingSettings`), supporting environment variable synchronization, declarative classes, and programmatic runtime initialization.
+
+---
+
+## 1. Configuring the Database Engine
+
+<Steps>
+  <Step>
+    ### Option A: Environment Variables (Zero-Code)
+
+    Set database variables in your `.env` file. ZCore automatically synchronizes flat environment variables with `settings.DATABASE`:
+
+    ```dotenv
+    # .env
+    DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/production_db
+    POOL_SIZE=20
+    MAX_OVERFLOW=10
+    ```
+
+    Bootstrap `db_manager` in `main.py`:
+
+    ```python
+    # main.py
+    from zcore import db_manager, settings
+
+    db_manager.init_app(config=settings.DATABASE)
+    ```
+  </Step>
+
+  <Step>
+    ### Option B: Declarative Settings Subclass
+
+    To configure engine options like connection arguments (`connect_args`) or execution options (`execution_options`), declare `DATABASE` in your custom `Settings` class:
+
+    ```python
+    # config.py
+    from zcore.config import Settings, DatabaseSettings
+
+    class AppSettings(Settings):
+        DATABASE: DatabaseSettings = DatabaseSettings(
+            url="postgresql+asyncpg://postgres:postgres@localhost:5432/production_db",
+            pool_size=20,
+            max_overflow=30,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+            connect_args={"server_settings": {"jit": "off"}},
+            execution_options={"isolation_level": "REPEATABLE READ"},
+            extra_engine_kwargs={}
+        )
+    ```
+  </Step>
+
+  <Step>
+    ### Option C: Direct `db_manager.init_app` Invocation
+
+    Pass a `DatabaseSettings` model instance or dictionary directly during startup:
+
+    ```python
+    # main.py
+    from zcore import db_manager
+    from zcore.config import DatabaseSettings
+
+    db_manager.init_app(
+        config=DatabaseSettings(
+            url="postgresql+asyncpg://postgres:postgres@localhost:5432/production_db",
+            pool_size=15,
+            connect_args={"timeout": 30}
+        )
+    )
+    ```
+  </Step>
+</Steps>
+
+---
+
+## 2. Configuring Structured Logging
+
+<Steps>
+  <Step>
+    ### Option A: Standard Setup with `.env`
+
+    ```dotenv
+    # .env
+    LOG_LEVEL=INFO
+    ```
+
+    Initialize logging at the beginning of `main.py`:
+
+    ```python
+    # main.py
+    from zcore.logging import setup_logging
+
+    setup_logging()
+    ```
+  </Step>
+
+  <Step>
+    ### Option B: Declarative `LoggingSettings`
+
+    Configure file rotation, slow SQL query thresholds, and muted loggers in your `Settings` subclass:
+
+    ```python
+    # config.py
+    from zcore.config import Settings, LoggingSettings
+
+    class AppSettings(Settings):
+        LOGGING: LoggingSettings = LoggingSettings(
+            level="INFO",
+            json_format=None,              # None: Console in Debug, JSON in Production
+            log_sql_queries=True,          # Log executed SQL queries
+            slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms
+            file_path="./logs/app.log",    # RotatingFileHandler (10MB, 5 backups)
+            muted_loggers=[
+                "uvicorn",
+                "uvicorn.access",
+                "sqlalchemy.engine"
+            ]
+        )
+    ```
+  </Step>
+
+  <Step>
+    ### Option C: Advanced Programmatic Overrides
+
+    `setup_logging` supports custom structlog processors, extra standard library handlers, and complete `logging.config.dictConfig` overrides:
+
+    ```python
+    # main.py
+    import logging
+    from zcore.logging import setup_logging, LoggingSettings
+
+    # 1. Custom handlers and processors
+    setup_logging(
+        config=LoggingSettings(level="DEBUG", file_path="./logs/app.log"),
+        extra_handlers=[logging.StreamHandler()],
+        log_level="DEBUG"
+    )
+
+    # 2. Complete dictConfig override
+    setup_logging(
+        dict_config={
+            "version": 1,
+            "disable_existing_loggers": False,
+            "handlers": {
+                "console": {"class": "logging.StreamHandler", "level": "INFO"}
+            },
+            "root": {"handlers": ["console"], "level": "INFO"}
+        }
+    )
+    ```
+  </Step>
+</Steps>
+
+<Callout type="info" emoji="⚡">
+  **SQL Query Logging:**
+  When `log_sql_queries` is enabled, executed statements are formatted with duration metrics (`duration_ms`). If `slow_query_threshold_ms` is set, fast queries are filtered out to reduce log noise.
+</Callout>

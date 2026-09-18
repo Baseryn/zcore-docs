@@ -7,7 +7,7 @@ icon: Database
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseCache` provides a unified caching interface supporting distributed caching (via Redis) with an asynchronous, thread-safe local memory fallback (via `TTLLRUCache`). It coordinates global cache lifecycles, structured serialization, and periodic background eviction.
+`BaseCache` provides a unified caching interface supporting distributed caching (via Redis) with an asynchronous, thread-safe local memory fallback (via `TTLLRUCache`). It coordinates global cache lifecycles, structured serialization, and periodic background eviction routines safely within active event loops.
 
 ## Class Definition
 
@@ -60,8 +60,8 @@ Retrieves and deserializes a cache record by its key. Looks up records from Redi
 async def get(
     self, 
     key: str, 
-    target_type: Optional[Type[BaseModel]] = None
-) -> Optional[Union[T, BaseModel, Any]]: ...
+    target_type: type[BaseModel] | None = None
+) -> T | BaseModel | Any | None: ...
 ```
 
 <TypeTable
@@ -71,7 +71,7 @@ async def get(
       description: 'The unique identifier key query (without the prefix).',
     },
     target_type: {
-      type: 'Type[BaseModel] | None',
+      type: 'type[BaseModel] | None',
       default: 'None',
       description: 'Optional Pydantic model class type to validate the decoded payload against.',
     },
@@ -135,12 +135,12 @@ async def delete(self, key: str) -> None: ...
 
 ### `init_cache`
 
-Configures the shared distributed Redis client and schedules the background in-memory garbage collection worker loop.
+Configures the shared distributed Redis client and attempts to schedule the background in-memory garbage collection worker loop if an active event loop is running (with lazy scheduling ensuring execution across subsequent cache operations).
 
 ```python
 from zcore.cache import init_cache
 
-def init_cache(redis_url: Optional[str] = None, **kwargs: Any) -> None: ...
+def init_cache(redis_url: str | None = None, **kwargs: Any) -> None: ...
 ```
 
 <TypeTable
@@ -178,7 +178,7 @@ from zcore.cache import TTLLRUCache
 
 class TTLLRUCache:
     def __init__(self, maxsize: int = 1000) -> None: ...
-    def get(self, key: str) -> Optional[Any]: ...
+    def get(self, key: str) -> Any | None: ...
     def set(self, key: str, value: Any, ttl: int = 3600) -> None: ...
     def delete(self, key: str) -> None: ...
     def evict_expired(self) -> None: ...

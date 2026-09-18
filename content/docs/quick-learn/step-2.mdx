@@ -32,21 +32,17 @@ ZCore does not hide SQLAlchemy; it orchestrates it. In this step, we will initia
 
     ```python
     # main.py
-    from zcore import Kernel, settings
-    from zcore.db import db_manager
+    from zcore import Kernel, db_manager, settings
 
     # Initialize Database Manager
-    db_manager.init_app(
-        db_url=settings.DATABASE_URL,
-        pool_size=settings.POOL_SIZE,       # Default: 5
-        max_overflow=settings.MAX_OVERFLOW,  # Default: 10
-        echo=(settings.DEBUG)               # Default: True
-    )
+    db_manager.init_app(config=settings.DATABASE)
     ```
 
-    *   `pool_size`: The number of connections to keep open in the pool.
-    *   `max_overflow`: How many connections to allow beyond `pool_size` under heavy load.
-    *   `echo`: ZCore replaces standard SQLAlchemy echo with a structured query logger.
+    *   `config`: Accepts a `DatabaseSettings` instance (like `settings.DATABASE`) or a dictionary.
+    *   `pool_size`: The number of connections to keep open in the pool (Default: 5).
+    *   `max_overflow`: How many connections to allow beyond `pool_size` under heavy load (Default: 10).
+    *   `pool_recycle`: Recycles connections after a specified timeout (Default: 1800s).
+    *   `pool_pre_ping`: Tests connections before handing them out to prevent stale connection errors (Default: True).
   </Step>
 
   <Step>

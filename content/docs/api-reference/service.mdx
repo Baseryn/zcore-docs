@@ -107,10 +107,10 @@ Fetches a paginated or complete listing of entities, applying the `post_get_mult
 ```python
 async def get_list(
     self, 
+    *criterion: Any,
     pagination: Any = None, 
     fields: Optional[List[Any]] = None, 
     options: Optional[List[ExecutableOption]] = None,
-    *criterion: Any,
     **filters: Any
 ) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
 ```
@@ -162,7 +162,7 @@ Orchestrates modifications to an existing entity, merging `pre_update` data, cal
 ```python
 async def update(
     self, 
-    id: Any, 
+    target: ModelType | Any, 
     schema: BaseModel, 
     partial: bool = False, 
     **extra_data: Any
@@ -176,7 +176,7 @@ Orchestrates batch modifications to multiple existing domain entities with `pre_
 ```python
 async def update_multi(
     self, 
-    data: Dict[Any, BaseModel], 
+    data: Dict[ModelType | Any, BaseModel], 
     partial: bool = False, 
     refresh: bool = False
 ) -> Sequence[ModelType]: ...
@@ -187,7 +187,7 @@ async def update_multi(
 Orchestrates the deletion of a single entity, triggering `pre_delete`, calling `on_delete`, executing `post_delete`, and invoking `_safe_commit()`.
 
 ```python
-async def delete(self, id: Any) -> ModelType: ...
+async def delete(self, target: ModelType | Any) -> ModelType: ...
 ```
 
 ### `delete_multi`
@@ -222,9 +222,9 @@ These methods directly delegate to the bound repository and can be overridden to
 
 * `async def on_create(self, schema: BaseModel, **extra_data: Any) -> ModelType`
 * `async def on_create_multi(self, schemas: List[BaseModel], refresh: bool = False) -> Sequence[ModelType]`
-* `async def on_update(self, id: Any, schema: BaseModel, partial: bool = False, **extra_data: Any) -> Optional[ModelType]`
-* `async def on_update_multi(self, data: Dict[Any, BaseModel], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]`
-* `async def on_delete(self, id: Any) -> Optional[ModelType]`
+* `async def on_update(self, target: ModelType | Any, schema: BaseModel, partial: bool = False, **extra_data: Any) -> Optional[ModelType]`
+* `async def on_update_multi(self, data: Dict[ModelType | Any, BaseModel], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]`
+* `async def on_delete(self, target: ModelType | Any) -> Optional[ModelType]`
 * `async def on_delete_multi(self, ids: List[Any]) -> Sequence[ModelType]`
 * `async def on_search(self, search_in: SearchRequest, pagination: Any = None) -> Any`
 
@@ -252,7 +252,7 @@ Override these hooks in your service to execute custom business logic before or 
       type: 'None',
       description: 'Triggered after batch insertion.',
     },
-    'pre_update(id, schema, partial)': {
+    'pre_update(target, schema, partial)': {
       type: 'dict | None',
       description: 'Triggered before update. Returning a dict merges values into the update payload.',
     },

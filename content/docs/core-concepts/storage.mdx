@@ -16,21 +16,24 @@ Attackers frequently craft malicious filenames or folder parameters (e.g., `../.
 
 ZCore mitigates this using multi-stage path sanitization:
 
-1. **Path Normalization:** Uses `PureWindowsPath(related_type).as_posix()` to normalize cross-platform path separators.
-2. **Boundary Assertion:** Resolves system symlinks and relative path operators (`..`) and strictly verifies that the resulting folder resides within the root upload path:
+1. **Path Normalization & Key Extraction:** Normalizes slashes and strips path prefixes via `_extract_key` to produce isolated POSIX storage keys.
+2. **Sandbox Boundary Assertion:** Resolves system symlinks and relative path operators (`..`) and strictly verifies that the resulting destination resides within the root upload path:
 
 ```python
 # Internal security validation in local.py
-base = await Path(self.base_path).resolve(strict=False)
-target_folder = await (Path(self.base_path) / normalized_type).resolve(strict=False)
+normalized_folder = folder.strip("/\\").replace("\\", "/")
+ext = StdPath(filename).suffix.lower()
+secure_filename = f"{uuid.uuid4().hex}{ext}"
+storage_key = f"{normalized_folder}/{secure_filename}" if normalized_folder else secure_filename
 
-if not target_folder.is_relative_to(base):
+physical_path = self._key_to_path(storage_key)
+if physical_path is None:
     raise AppException("Path traversal attempt detected")
 ```
 
 <Callout type="warn" emoji="🛡️">
   **Arbitrary Deletion Protection:**
-  This same `.is_relative_to(base)` verification executes inside `storage.delete(file_path)`. An attacker cannot exploit delete endpoints to remove arbitrary system configuration files.
+  This same boundary verification executes inside `storage.delete(file_path_or_url)`. Incoming web URLs or filesystem paths are resolved via `_resolve_path`, preventing attackers from exploiting delete endpoints to remove arbitrary system configuration files.
 </Callout>
 
 ---
@@ -39,23 +42,25 @@ if not target_folder.is_relative_to(base):
 
 Relying purely on file extensions (`.png`, `.pdf`) or client-provided `Content-Type` headers is completely insecure, as attackers can disguise PHP web shells or executable binaries as images.
 
-ZCore's **`SafeMimeTypeValidator`** reads the first 2048 header bytes to evaluate actual file signatures:
+ZCore's **`SafeMimeTypeValidator`** reads the first 8192 header bytes to evaluate actual file signatures and detect stored XSS / script vectors:
 
 <Mermaid chart="graph TB
-    File[Uploaded Binary Stream] --> Read[Read First 2048 Header Bytes]
-    Read --> ScriptCheck{Contains <?php, <script, MZ, or #!?}
-    ScriptCheck -- Yes --> Critical[Raise ValidationError: Security Violation]
+    File[Uploaded Binary Stream] --> Read[Read First 8192 Header Bytes]
+    Read --> HeaderCheck{Blocked Binary Header? MZ, #!/, or \x7fELF}
+    HeaderCheck -- Yes --> CriticalBin[Raise ValidationError: Executable Binary Forbidden]
+    HeaderCheck -- No --> ScriptCheck{Contains Active Script/XSS Pattern?}
+    ScriptCheck -- Yes --> CriticalScript[Raise ValidationError: Scripts & Injections Forbidden]
     ScriptCheck -- No --> Magic[Compare against SIGNATURES Dictionary]
     Magic -- Match Found --> Allowed{Is MIME in allowed_mimes?}
     Allowed -- Yes --> Save[Allow Upload to Disk]
     Allowed -- No --> Reject[Raise ValidationError: MIME Not Allowed]"/>
 
-### Executable Injection Firewall
-Even before checking legitimate magic bytes, `SafeMimeTypeValidator` inspects the header for malicious execution signatures:
+### Executable & Stored XSS Injection Firewall
+Even before checking legitimate magic bytes, `SafeMimeTypeValidator` inspects the initial byte sample against binary headers and active script injection patterns:
+* **Executable Binary Headers:** Windows PE (`MZ`), Unix Shebang (`#!/`), and Linux ELF (`\x7fELF`) binaries.
 * **PHP Script Blocks:** `<?php`
-* **HTML/JavaScript Injections:** `<script`
-* **Windows Portable Executables (PE):** `MZ` header
-* **Unix Shebang Scripts:** `#!/`
+* **HTML/JavaScript Injections:** `<script`, `javascript:`, `vbscript:`, `data:text/html`, `<!doctype html`, `<html`
+* **Embedded Vectors & Handlers:** `<iframe>`, `<object>`, `<embed>`, `onload=`, `onerror=`, `onclick=`, `xlink:href=javascript:`
 
 If any of these signatures are present, ZCore immediately logs a critical security alert and rejects the request.
 
@@ -75,16 +80,15 @@ Uploading multi-gigabyte files can saturate disk space and crash server memory. 
 
 To prevent attackers from overwriting existing files or guessing storage locations, `LocalStorageProvider` ignores original client filenames when storing on disk.
 
-It generates an isolated, 15-character UUID prefix paired with the normalized extension:
+It generates an isolated, 32-character hexadecimal UUID prefix paired with the normalized extension:
 
 ```python
-# Generates secure filename: "3f9a8b1c4e2d7a9.png"
-uuid_file_name = str(uuid.uuid4())[:15]
-ext = Path(filename).suffix.lower()
-new_file_name = f"{uuid_file_name}{ext}"
+# Generates secure filename: "3f9a8b1c4e2d7a9f8c1b2a3d4e5f6a7b.png"
+ext = StdPath(filename).suffix.lower()
+secure_filename = f"{uuid.uuid4().hex}{ext}"
 ```
 
 <Callout type="info" emoji="⚡">
   **Asynchronous Disk Streaming:**
-  Once validated, files are written asynchronously using `aiofiles` in 1 MB chunks, keeping the event loop responsive during concurrent uploads.
+  Once validated, files are written asynchronously using `aiofiles` in 1 MB chunks, keeping the event loop responsive during concurrent uploads, and returning normalized web URLs prefixed with `STORAGE_URL_PREFIX`.
 </Callout>

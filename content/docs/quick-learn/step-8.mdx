@@ -22,7 +22,7 @@ Instead of writing 7 redundant route functions for every model, ZCore's `BaseRou
     from .schemas import TaskCreate, TaskUpdate, TaskResponse
     from .services import TaskService
 
-    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
+    class TaskRouter(BaseRouter):
         model = Task
         create_schema = TaskCreate
         update_schema = TaskUpdate

@@ -54,9 +54,9 @@ ZCore's `BaseService` divides database operations into three layers: **Pre-hooks
             # Custom persistence delegation (surrounded safely by pre_create and post_create)
             return await self.repository.create(schema, **extra_data)
             
-        async def on_delete(self, id: Any) -> Task | None:
+        async def on_delete(self, target: Task | Any) -> Task | None:
             # Example: Soft-delete override instead of permanent row deletion
-            return await self.repository.update(id, TaskUpdate(is_deleted=True), partial=True)
+            return await self.repository.update(target, TaskUpdate(is_deleted=True), partial=True)
     ```
   </Step>
 
@@ -71,11 +71,11 @@ ZCore's `BaseService` divides database operations into three layers: **Pre-hooks
     | `post_create(model)` | Create (Single) | `None` | Trigger post-insert events (e.g., send emails, webhooks). |
     | `pre_create_multi(schemas)` | Create (Batch) | `None` | Pre-validation check before inserting multiple records. |
     | `post_create_multi(models)` | Create (Batch) | `None` | Run notifications or logging after bulk insertions. |
-    | `pre_update(id, schema, partial)` | Update (Single) | `dict \| None` | Compute/merge data into the update payload. |
+    | `pre_update(target, schema, partial)` | Update (Single) | `dict \| None` | Compute/merge data into the update payload. |
     | `post_update(model)` | Update (Single) | `None` | Clear cache keys or log modification audit trails. |
     | `pre_update_multi(data, partial)` | Update (Batch) | `None` | Intercept batch dictionary updates before execution. |
     | `post_update_multi(models)` | Update (Batch) | `None` | Perform side-effects after bulk updates finish. |
-    | `pre_delete(id)` | Delete (Single) | `None` | Verify dependencies or cascade rules before row removal. |
+    | `pre_delete(target)` | Delete (Single) | `None` | Verify dependencies or cascade rules before row removal. |
     | `post_delete(model)` | Delete (Single) | `None` | Purge associated files from local/S3 storage. |
     | `pre_delete_multi(ids)` | Delete (Batch) | `None` | Validate or check permissions for a list of target IDs. |
     | `post_delete_multi(models)` | Delete (Batch) | `None` | Batch cleanup of external resources after deletions. |

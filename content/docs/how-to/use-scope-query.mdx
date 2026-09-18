@@ -37,9 +37,9 @@ ZCore solves this at the architectural root:
     ```
 
     `SoftDeleteMixin` automatically injects:
-    * `deleted_at: Mapped[datetime | None]` (indexed UTC timestamp, nullable).
+    * `deleted_at: Mapped[datetime | None]` (indexed timezone-aware timestamp, nullable).
     * `task.is_deleted` property (evaluates whether `deleted_at` is set).
-    * `task.soft_delete()` (sets `deleted_at = datetime.now(UTC)`).
+    * `task.soft_delete()` (sets `deleted_at = now()`).
     * `task.restore()` (resets `deleted_at = None`).
     * Automatic `scope_query` filtering `WHERE deleted_at IS NULL` for all repository queries.
   </Step>
