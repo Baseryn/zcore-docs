@@ -20,8 +20,142 @@ This page documents all notable architectural evolutions, breaking changes, secu
 
 ---
 
-<Accordions type="multiple" defaultValue={['v0.1.0-beta.8']}>
-  <Accordion id="v0.1.0-beta.8" title="v0.1.0-beta.8 (Latest Pre-release) — August 24, 2026 🚀">
+<Accordions type="multiple" defaultValue={['v0.1.0-rc.1']}>
+  <Accordion id="v0.1.0-rc.1" title="v0.1.0-rc.1 (Latest Pre-release) — September 12, 2026 🚀">
+    Welcome to **v0.1.0-rc.1 (Release Candidate 1)** of the ZCore Framework! 🚀
+
+    As we officially transition from the Beta phase toward our milestone **v1.0.0** Stable GA, `v0.1.0-rc.1` marks a major milestone in framework stability, security hardening, and production readiness.
+
+    This release delivers dynamic primary key detection across REST endpoints, introduces an anti-shadowing weighted route sorting algorithm, optimizes ORM mutations to accept model instances directly (bypassing duplicate database fetches), adds dialect-aware batch fallbacks for non-RETURNING databases (such as MySQL), integrates a centralized IANA timezone subsystem (`ZDateTime`), redesigns the structured logging pipeline via `ProcessorFormatter`, completely hardens the file storage layer with strict sandboxing and active XSS/executable scanning, and achieves complete unit and integration test coverage across all subsystems.
+
+    ### 🚀 Core Features & Architectural Advancements
+
+    #### 1. 🎯 Dynamic Primary Key Resolution & Generalized Routing (`BaseRouter`)
+    Previously, `BaseRouter` assumed model primary keys were strictly UUIDs. In `v0.1.0-rc.1`, routing infrastructure dynamically inspects ORM metadata:
+    * **Automatic PK Type Detection (`_resolve_pk_type`):** Automatically resolves whether the primary key is an `int`, `uuid.UUID`, or other scalar type via SQLAlchemy column inspection.
+    * **Dynamic Path Mapping (`_get_pk_path`):** Generates type-safe URL converter paths (e.g., `/{id:int}` for integer PKs, `/{id:uuid}` for UUIDs, or `/{id}` as a fallback).
+    * **Explicit PK Override:** Models or routers can explicitly declare `pk_type = int` to override dynamic reflection.
+    * **Streamlined Endpoint Signatures:** Cleaned up internal wrapper signatures by removing unused `**kwargs` and enforcing explicit parameter typing.
+
+    #### 2. ⚖️ Weighted Route Specificity Sorting (Anti-Path Shadowing)
+    A notorious issue in REST frameworks is Path Shadowing—where dynamic parameterized routes accidentally capture requests intended for static endpoints (e.g., `GET /{id}` shadowing `POST /search`):
+    * **Multi-Tier Weighted Scoring (`_sort_routes`):** Replaced basic string sorting with an advanced scoring tuple: `(has_dynamic, total_dynamic, segment_scores, -len(segments))`.
+    * **Strict Route Precedence:** Guarantees that static segment routes (`/search`) are always matched before single dynamic parameters (`/{id}`) and catch-all path parameters (`/{path:path}`), regardless of declaration order.
+
+    #### 3. ⚡ Optimized Instance-Aware ORM Mutations (`update`, `delete`, `update_multi`)
+    To eliminate redundant database lookups when an entity is already loaded in memory:
+    * **Direct Model Acceptance:** `BaseRepository.update()` and `BaseRepository.delete()` now accept `target: ModelType | Any`. If a model instance is passed directly, the preliminary `SELECT` query is completely skipped.
+    * **Instance-Keyed Batch Updates:** `update_multi` now accepts dictionaries keyed by either model instances or primary key scalars (`dict[ModelType | Any, BaseModel]`), resolving the PK seamlessly via `getattr(key, self.pk_name, key)`.
+    * **Aligned Service Hooks:** Updated `pre_update`, `on_update`, `pre_delete`, and `on_delete` in `BaseService` to accept `target: ModelType | Any`.
+
+    #### 4. 🔄 Cross-Dialect Batch Compatibility (Dialect-Aware Fallbacks)
+    Enables seamless database portability across SQL engines that lack native `RETURNING` support:
+    * **Dialect-Aware `create_multi`:** Inspects the engine's `insert_returning` capability. If supported (PostgreSQL, modern SQLite), it executes `insert().returning()`. Otherwise (MySQL, older SQLite), it falls back gracefully to `db.add_all()` and `db.flush()`.
+    * **Dialect-Aware `delete_multi`:** Inspects `delete_returning`. If unsupported, it fetches records via `get_by_ids()` prior to atomic deletion, guaranteeing deleted instances are returned intact.
+
+    #### 5. ⏱️ Centralized Timezone Management & `ZDateTime` Subsystem
+    Introduced `zcore.utils.timezone` for robust, timezone-aware datetime manipulation:
+    * **IANA ZoneInfo Resolution (`get_app_timezone`):** Resolves timezones with LRU caching and falls back safely to UTC if an invalid timezone is provided.
+    * **`ZDateTime` Type Alias:** Custom type alias utilizing Pydantic's `PlainSerializer` to automatically format datetimes as timezone-aware ISO 8601 strings with offsets during JSON serialization.
+    * **Timezone-Aware Helpers:** Added `now()`, `utc_now()`, `to_app_timezone()`, and `format_iso_with_app_timezone()`.
+    * **Soft Delete & JSON Sync:** `SoftDeleteMixin` and `CustomJSONEncoder` now natively utilize timezone-aware timestamps.
+    * **Windows Support:** Added `tzdata>=2024.1` for guaranteed IANA timezone database resolution on Windows environments.
+
+    #### 6. 🪵 Enterprise Structured Logging (`LoggingSettings` & `ProcessorFormatter`)
+    Redesigned the logging pipeline to seamlessly unify structlog and Python's standard logging library:
+    * **`ProcessorFormatter` Integration:** Eliminates duplicate log emissions and bridges third-party loggers (`uvicorn`, `sqlalchemy.engine`) into a unified structlog pipeline.
+    * **`LoggingSettings` Model:** Configured via `Settings.LOGGING` with backward-compatible bidirectional synchronization to legacy `LOG_LEVEL`.
+    * **Slow Query Interceptor:** Added `slow_query_threshold_ms` to silently filter out fast queries and log only statements exceeding latency thresholds.
+    * **Built-in File Rotation & DictConfig:** Added `RotatingFileHandler` support (10MB, 5 backups) via `file_path` setting and support for full `logging.config.dictConfig` overrides.
+    * **Enhanced Telemetry:** `RequestLogMiddleware` now captures real HTTP status codes from `http.response.start` and client IPs.
+
+    #### 7. 📦 Sandboxed Local Storage & Advanced Threat Validation
+    Expanded `zcore.storage` into an enterprise-grade, sandboxed asset management subsystem:
+    * **Path Traversal Defense:** `LocalStorageProvider` incorporates `_extract_key`, `_key_to_path`, and `_resolve_path` to strictly bound all read/write/delete operations within `base_path`.
+    * **URL Resolution & Existence Check:** Added `get_url(file_path_or_url)` and `exists(file_path_or_url)` to the `StorageProvider` base interface.
+    * **Executable & XSS Threat Detection (`SafeMimeTypeValidator`):**
+      * Increased sample inspection buffer from 2KB to 8KB.
+      * Rejects binary executable headers (`MZ` for `.exe`/`.dll`, `#!/` for shell scripts, `\x7fELF` for Linux binaries).
+      * Scans file payloads for Stored XSS and active script injections (`<script>`, `<?php`, `javascript:`, `onload=`, `onerror=`, `<iframe>`, etc.).
+
+    #### 8. 🔍 Search Engine Hardening & Operator Unification
+    * **Consolidated Text Operators:** Unified `contains` into the `ilike` operator family with automatic SQL wildcard escaping (`%`, `_`).
+    * **Non-String Column Text Search:** Automatically casts non-string database columns (e.g., UUIDs, integers) via `cast(col, String)` when text operators (`ilike`, `startswith`, `endswith`, `contains`) are applied.
+    * **Expanded Type Coercion:** Supports `set` collections alongside `list` and `tuple` for `in` operators, and provides clear, column-aware `ValidationError` messages when coercion fails.
+
+    #### 9. 🗄️ Native Engine JSON Serialization & Guaranteed Lifespan Teardown
+    * **Custom JSON Column Serializer:** `DatabaseManager` passes `json_dumps` and `json_loads` directly to `create_async_engine`, enabling native persistence of `UUID`, `Decimal`, `date`, and `datetime` types in database JSON/JSONB columns.
+    * **Guaranteed Shutdown Teardown:** `Kernel.lifespan` automatically executes `await close_cache()` and `await db_manager.close()` in its `finally` block, ensuring clean connection pool disposal upon application shutdown.
+    * **Event-Loop Safe Cache Eviction:** Background cache eviction task in `BaseCache` lazily schedules sweeps only when an active event loop is running, preventing `RuntimeError` during CLI/import time.
+
+    ---
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. get_list Parameter Ordering', '2. Instance Mutations', '3. Structured DB Configuration', '4. Storage Upload Return Type']}>
+      <Tab value="1. get_list Parameter Ordering">
+        In `BaseRepository` and `BaseService`, variadic filter expressions (`*criterion`) have been moved to the beginning of the parameter list to match standard Python conventions and prevent positional shifting.
+
+        ```python
+        # Before (v0.1.0-beta.8) — ambiguous positional parameter placement
+        items = await repo.get_list(pagination_params, fields_list, User.is_active == True)
+
+        # After (v0.1.0-rc.1) — positional criterion first, optional controls via keyword arguments
+        items = await repo.get_list(
+            User.is_active == True,
+            pagination=pagination_params,
+            fields=fields_list
+        )
+        ```
+      </Tab>
+
+      <Tab value="2. Instance Mutations">
+        You can now pass either the primary key or the instantiated model directly to `service.update()` and `service.delete()`.
+
+        ```python
+        # Before (v0.1.0-beta.8) — required passing ID, triggering an unnecessary second SELECT query
+        user = await user_service.get(id=user_id)
+        updated = await user_service.update(user.id, user_update_schema)
+
+        # After (v0.1.0-rc.1) — direct instance update (zero redundant SELECT queries)
+        user = await user_service.get(id=user_id)
+        updated = await user_service.update(user, user_update_schema)
+        ```
+      </Tab>
+
+      <Tab value="3. Structured DB Configuration">
+        `db_manager.init_app` now accepts structured `DatabaseSettings` objects directly.
+
+        ```python
+        # Before (v0.1.0-beta.8)
+        db_manager.init_app(
+            db_url=settings.DATABASE_URL,
+            pool_size=settings.POOL_SIZE,
+            max_overflow=settings.MAX_OVERFLOW,
+            echo=settings.DEBUG
+        )
+
+        # After (v0.1.0-rc.1) — pass structured settings directly
+        db_manager.init_app(config=settings.DATABASE)
+        ```
+      </Tab>
+
+      <Tab value="4. Storage Upload Return Type">
+        `StorageProvider.upload()` and `upload_stream()` now return the web-accessible URL directly instead of a raw storage path.
+
+        ```python
+        # Before (v0.1.0-beta.8)
+        file_path = await storage.upload("uploads", file)
+        url = storage.get_url(file_path)
+
+        # After (v0.1.0-rc.1)
+        url = await storage.upload("uploads", file)  # Returns the web-accessible URL directly
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+
+  <Accordion id="v0.1.0-beta.8" title="v0.1.0-beta.8 — August 24, 2026 🚀">
     Welcome to **v0.1.0-beta.8** of the ZCore Framework! 🚀
 
     As we approach our milestone **v1.0.0** stable release, `v0.1.0-beta.8` delivers major performance breakthroughs in relational data mutations, introduces an enterprise-grade isolated background task execution pipeline with automatic dependency injection, embeds native soft-delete capabilities, significantly expands dynamic search operators, completely redesigns the developer experience with a rich, interactive Terminal User Interface (TUI), and aligns all CLI scaffolding templates with the latest single-generic architecture.
