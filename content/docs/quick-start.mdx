@@ -90,8 +90,8 @@ Open the auto-generated `tasks/models.py` file and customize your standard SQLAl
 ```python
 # tasks/models.py
 import uuid
-from zcore import Base
 from sqlalchemy.orm import Mapped, mapped_column
+from zcore import Base
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -106,8 +106,8 @@ Let's also define the basic schemas in `tasks/schemas.py`:
 ```python
 # tasks/schemas.py
 import uuid
-from zcore import Zchema
 from pydantic import ConfigDict
+from zcore import Zchema
 
 class TaskBase(Zchema):
     __model__ = "tasks"
@@ -123,6 +123,7 @@ class TaskUpdate(TaskBase):
 
 class TaskResponse(TaskBase):
     id: uuid.UUID
+    
     model_config = ConfigDict(from_attributes=True)
 ```
 
@@ -133,10 +134,18 @@ At this stage, you have a normal declarative model. You can stop right here and 
   **Tip:** Don't forget to include your domain's router inside the plugin's `setup` method:
 
 ```python
-# plugin.py
-def setup(self, app: FastAPI) -> None:
-    from .routers import router_instance
-    app.include_router(router_instance.router)
+# tasks/plugin.py
+from fastapi import FastAPI
+from zcore import Plugin
+from .routers import router_instance
+
+class TaskPlugin(Plugin):
+    name = "tasks"
+    version = "0.1.0"
+    dependencies = []
+
+    def setup(self, app: FastAPI) -> None:
+        app.include_router(router_instance.router)
 ```
 </Callout>
 
@@ -155,42 +164,45 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI
-from zcore import Kernel, settings
-from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
-from zcore.exceptions import app_exception_handler, AppException
-from zcore.db import db_manager, register_db_event_dispatcher
+from zcore import Kernel, db_manager, register_db_event_dispatcher, settings
+from zcore.exceptions import AppException, app_exception_handler
 from zcore.logging import setup_logging
+from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
 
 # Import your domain plugin
 from tasks.plugin import TaskPlugin  # <--- ADD THIS
 
 setup_logging()
-db_manager.init_app(
-    db_url=settings.DATABASE_URL,
-    pool_size=settings.POOL_SIZE,
-    max_overflow=settings.MAX_OVERFLOW,
-    echo=(settings.DEBUG)
-)
+
+# Initialize Database Manager using structured settings
+db_manager.init_app(config=settings.DATABASE)
 
 kernel = Kernel()
 register_db_event_dispatcher(kernel.dispatcher)
 
-# Register the plugin
+# Register the domain plugin
 kernel.add_plugin(TaskPlugin())  # <--- ADD THIS
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     lifespan=kernel.lifespan
 )
+
 kernel.setup(app)
 
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(ScopedDependencyMiddleware)
+
 app.add_exception_handler(AppException, app_exception_handler)
 
 @app.get("/")
 async def root():
-    return {"status": "healthy", "framework": "ZCore", "debug": settings.DEBUG}
+    return {
+        "status": "healthy",
+        "framework": "ZCore",
+        "version": "0.1.0-rc.1",
+        "debug": settings.DEBUG
+    }
 ```
 
 ---
@@ -228,7 +240,7 @@ Open `tasks/routers.py` and define your router configuration:
 # tasks/routers.py
 from zcore import BaseRouter
 from .models import Task
-from .schemas import TaskCreate, TaskUpdate, TaskResponse
+from .schemas import TaskCreate, TaskResponse, TaskUpdate
 from .services import TaskService
 
 class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
@@ -237,18 +249,19 @@ class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
     update_schema = TaskUpdate
     schema_out = TaskResponse
     service = TaskService
+    
     prefix = "/tasks"
     tags = ["Tasks"]
 
 router_instance = TaskRouter()
 ```
 
-Now, uncomment the router inclusion in `tasks/plugin.py`:
+Now, ensure the router is included in `tasks/plugin.py`:
 
 ```python
 # tasks/plugin.py
-from zcore import Plugin
 from fastapi import FastAPI
+from zcore import Plugin
 from .routers import router_instance
 
 class TaskPlugin(Plugin):
@@ -259,10 +272,16 @@ class TaskPlugin(Plugin):
     def setup(self, app: FastAPI) -> None:
         app.include_router(router_instance.router)
 
-    async def on_startup(self):
+    async def before_startup(self) -> None:
         pass
 
-    async def on_shutdown(self):
+    async def on_startup(self) -> None:
+        pass
+
+    async def after_startup(self) -> None:
+        pass
+
+    async def on_shutdown(self) -> None:
         pass
 ```
 
@@ -286,9 +305,9 @@ This single class scaffolds 7 secure endpoints out-of-the-box: `POST /`, `GET /{
 
 ```python
 import uuid
+from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 from tasks.models import Task
 
 @router.get("/tasks/{id}")
@@ -305,9 +324,8 @@ async def get_task(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 from sqlalchemy.ext.asyncio import AsyncSession
 from zcore import BaseRepository
 from .models import Task
-from .schemas import TaskCreate, TaskUpdate
 
-class TaskRepository(BaseRepository[Task, TaskCreate, TaskUpdate]):
+class TaskRepository(BaseRepository[Task]):
     def __init__(self, db: AsyncSession):
         super().__init__(model=Task, db=db)
 ```
@@ -331,16 +349,16 @@ By simply defining this class, you gain access to async single & bulk CRUD opera
 ```python
 # tasks/services.py
 from typing import Any
+from pydantic import BaseModel
 from zcore import BaseService
 from .models import Task
-from .schemas import TaskCreate, TaskUpdate
 from .repositories import TaskRepository
 
-class TaskService(BaseService[Task, TaskCreate, TaskUpdate]):
+class TaskService(BaseService[Task]):
     def __init__(self, repository: TaskRepository):
         super().__init__(model=Task, repository=repository)
 
-    async def pre_create(self, schema: TaskCreate) -> dict[str, Any] | None:
+    async def pre_create(self, schema: BaseModel) -> dict[str, Any] | None:
         # Perform validation or auto-generate fields before saving
         return {"slug": "slugified-title"}
 ```
@@ -379,6 +397,7 @@ class TaskInternal(BaseModel):
 ```python
 # tasks/schemas.py
 import uuid
+from pydantic import ConfigDict
 from zcore import Zchema
 
 class TaskResponse(Zchema):
@@ -386,7 +405,9 @@ class TaskResponse(Zchema):
     
     id: uuid.UUID
     title: str
-    assignee_email: str  # Automatically hidden if the active user lacks scope
+    assignee_email: str | None = None # Automatically hidden if the active user lacks scope
+    
+    model_config = ConfigDict(from_attributes=True)
 ```
 
 When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and OpenAPI documentation (`?schema=true`).
