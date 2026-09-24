@@ -13,7 +13,7 @@ To make our `Zchema` field-pruning work, we need to authenticate the user, extra
   <Step>
     ### Define the User Protocol
 
-    ZCore does not enforce a user model. You just need a class that matches the `UserProtocol` (has `id`, `is_active`, `is_superuser`). Let's define a simple mock user and an auth dependency.
+    ZCore does not enforce a rigid user model. You just need a class that matches the `UserProtocol` (has `id`, `is_active`, `is_superuser`). Let's define a simple mock user and an auth dependency.
 
     Create `auth.py` in your root directory:
 
@@ -41,6 +41,10 @@ To make our `Zchema` field-pruning work, we need to authenticate the user, extra
                 all_restricted_fields=["tasks.view.assignee_email"] 
             )
     ```
+
+    <Callout type="info" emoji="⚡">
+      **Dynamic User Caching:** `BaseAuth` automatically caches resolved user sessions to eliminate redundant database hits. The default cache lifespan is dynamically configured via `settings.AUTH_CACHE_TTL` (Default: 300s) or can be passed explicitly via `cache_ttl`.
+    </Callout>
   </Step>
 
   <Step>
@@ -69,7 +73,7 @@ To make our `Zchema` field-pruning work, we need to authenticate the user, extra
       **The Flow:**
       1. A request hits a `BaseRouter` endpoint.
       2. `HasScopes` dependency checks if the user has `tasks:view`.
-      3. `BaseAuth.__call__` decodes the JWT, fetches the user, and automatically maps `all_restricted_fields` to `ctx.restricted_fields` as an immutable `frozenset`.
+      3. `BaseAuth.__call__` decodes the JWT, fetches the user (with cache verification), and automatically maps `all_restricted_fields` to `ctx.restricted_fields` as an immutable `frozenset`.
       4. The endpoint returns a `TaskResponse` object.
       5. `Zchema` intercepts serialization, sees the restriction, and **removes** `assignee_email` from the JSON response automatically.
     </Callout>

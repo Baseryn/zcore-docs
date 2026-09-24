@@ -103,11 +103,12 @@ ZCore uses standard SQLAlchemy 2.0 declarative models. It does not force you to 
     <Callout type="info" emoji="🔐">
       **Under the hood:** The `Base` class you inherited from provides a special classmethod called `actions()`.
 
-      If you call `Task.actions()`, it returns a dataclass mapping standard CRUD operations to permission strings based on your table name:
+      If you call `Task.actions()`, it returns an `Actions` dataclass mapping standard operations and lookups to permission strings based on your table name:
 
       * `CREATE`: `"tasks:create"`
       * `VIEW`: `"tasks:view"`
       * `LISTVIEW`: `"tasks:listview"`
+      * `LOOKUP`: `"tasks:lookup"`
       * `UPDATE`: `"tasks:update"`
       * `DELETE`: `"tasks:delete"`
 

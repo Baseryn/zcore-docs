@@ -32,10 +32,11 @@ Writing the same `SELECT`, `INSERT`, and `UPDATE` queries for every model is ted
 
     <Callout type="info" emoji="📦">
       **Out-of-the-box features:** By writing this empty class, `TaskRepo` now has access to:
-      * **CRUD & Lookups:** `create`, `create_multi`, `get`, `get_by_ids`, `exist`, `count`, `update`, `delete` (with direct primary key or model instance support)
-      * **Batch Operations:** `update_multi`, `delete_multi` (with dialect-aware returning fallbacks)
-      * **Pagination:** `get_list` (supports both Page-Number and high-performance Cursor pagination)
-      * **Dynamic Search:** `search` (compiles nested JSON filters into safe SQL with depth-limit protection)
+      * **CRUD & Mutations:** `create`, `create_multi`, `get`, `get_by_ids`, `exist`, `count`, `update`, and `delete` (with direct primary key or model instance support).
+      * **Soft-Delete & Restoration:** Built-in `restore` and atomic batch `restore_multi` for recovering soft-deleted records, plus a `force=True` flag on `delete`/`delete_multi` for permanent hard-deletes.
+      * **Batch Operations:** `update_multi`, `delete_multi` (with dialect-aware `RETURNING` optimizations).
+      * **Pagination:** `get_list` (supports both Page-Number and high-performance Keyset Cursor pagination).
+      * **Dynamic Search & Projection:** `search` with selective column loading (`fields` via `load_only`), custom SQLAlchemy options (`options`), depth-limit validation, inverted operators (`not_like`, `not_in`, `not_between`, `is_not_null`), and boolean `not` grouping.
       
       All methods are fully asynchronous and type-hinted.
     </Callout>

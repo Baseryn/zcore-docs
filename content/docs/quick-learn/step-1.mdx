@@ -76,6 +76,20 @@ In this first step, we will set up the foundation of our project. ZCore is desig
     print(settings.DATABASE.url)
     ```
 
+    In addition to core connectivity, all framework runtime boundaries are tunable via environment variables with sensible defaults:
+
+    ```bash
+    # .env (Tunable framework parameters)
+    PAGINATION_DEFAULT_SIZE=20
+    PAGINATION_MAX_SIZE=100
+    SEARCH_MAX_DEPTH=3
+    AUTH_CACHE_TTL=300
+    CACHE_DEFAULT_TTL=3600
+    CACHE_LOCAL_MAXSIZE=1000
+    CACHE_EVICTION_INTERVAL=60
+    STREAM_QUEUE_MAXSIZE=100
+    ```
+
     <Callout type="info" emoji="💡">
       **Deep Dive:** The `settings` object is a Proxy. This means importing it at the top of your files is completely safe and doesn't trigger premature initialization of the Dependency Injection container. Values are resolved lazily when accessed.
     </Callout>
