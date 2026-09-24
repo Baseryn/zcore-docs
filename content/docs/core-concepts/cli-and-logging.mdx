@@ -1,12 +1,12 @@
 ---
 title: CLI & Structured Logging
-description: Deep dive into ZCore's introspection-based environment scaffolding and unified structlog observability pipeline.
+description: Deep dive into ZCore's cascading server runner, introspection-based environment scaffolding, and unified structlog observability pipeline.
 icon: Terminal
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore provides native tooling to streamline developer ergonomics and guarantee production observability through introspection-driven CLI commands and a centralized, context-aware logging pipeline.
+ZCore provides native tooling to streamline developer ergonomics and guarantee production observability through introspection-driven CLI commands, cascading development servers, and a centralized, context-aware logging pipeline.
 
 ---
 
@@ -29,7 +29,28 @@ zc genenv --force -o .env.production.example
 
 ---
 
-## 2. Structured Logging Pipeline (`structlog`)
+## 2. Cascading Server Runner (`zc run`)
+
+ZCore provides an intelligent development and production server runner that resolves configuration hierarchically:
+
+$$\text{CLI Arguments} \longrightarrow \text{.env File Variables} \longrightarrow \text{Built-in Defaults}$$
+
+### Architecture & Precedence Resolution
+When executing `zc run [app]`, the CLI runner executes the following lifecycle:
+
+1. **Environment File Parsing:** Reads key-value pairs safely from `.env` (or custom file via `--env-file`), resolving `APP_MODULE`, `UVICORN_APP`, `HOST`, `PORT`, `RELOAD`, `DEBUG`, `WORKERS`, and `LOG_LEVEL`.
+2. **CLI Override Enforcement:** Explicit flags (e.g. `--host 0.0.0.0 --port 8080`) take immediate precedence over `.env` variables and defaults (`127.0.0.1:8000`).
+3. **Smart Multi-Worker Protection:** When `--workers` is set to greater than `1` (or specified in `.env`), live code reloading (`--reload`) is **automatically disabled** to prevent worker race conditions.
+4. **Transparent Uvicorn Passthrough:** The CLI uses `parse_known_args()` to capture any arbitrary Uvicorn flags (such as `--proxy-headers`, `--ssl-keyfile`, or `--forwarded-allow-ips`) and forwards them directly to the underlying server process.
+
+```bash
+# Example: Production multi-worker execution with arbitrary Uvicorn flags
+zc run --workers 4 --log-level warning --proxy-headers --forwarded-allow-ips="*"
+```
+
+---
+
+## 3. Structured Logging Pipeline (`structlog`)
 
 Standard FastAPI, Uvicorn, and SQLAlchemy logging often outputs unformatted, duplicated text streams that are difficult to parse in log aggregators.
 
@@ -61,10 +82,12 @@ from zcore.config import LoggingSettings, Settings
 class AppSettings(Settings):
     LOGGING: LoggingSettings = LoggingSettings(
         level="INFO",
-        json_format=None,
-        log_sql_queries=True,
-        slow_query_threshold_ms=200.0,
-        file_path="./logs/app.log",
+        json_format=None,              # None: Console in Debug, JSON in Production
+        log_sql_queries=True,          # Log executed SQL queries
+        slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms
+        file_path="./logs/app.log",    # Enables RotatingFileHandler
+        max_bytes=10 * 1024 * 1024,    # Rotate when file reaches 10MB (Default: 10MB)
+        backup_count=5,                # Retain 5 rotated log backups (Default: 5)
         muted_loggers=["uvicorn", "uvicorn.access", "uvicorn.error", "sqlalchemy.engine"],
         custom_processors=[]
     )
@@ -85,7 +108,9 @@ setup_logging()
 setup_logging(
     config=LoggingSettings(
         level="DEBUG",
-        file_path="./logs/app.log",  # Automatic RotatingFileHandler (10MB, 5 backups)
+        file_path="./logs/app.log",
+        max_bytes=20 * 1024 * 1024,
+        backup_count=10,
         slow_query_threshold_ms=100.0
     )
 )
