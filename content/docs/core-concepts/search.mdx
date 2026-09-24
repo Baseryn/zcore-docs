@@ -14,12 +14,10 @@ Exposing arbitrary database filtering to frontend clients is traditionally dange
 
 When a `SearchRequest` payload is received (typically via `POST /search` or `POST /lookup`), the `SearchEngine` coordinates execution across three distinct phases:
 
-```mermaid
-graph TB
+<Mermaid chart="graph TB
     Req[SearchRequest JSON] --> Val[1. Security & Depth Validation]
     Val --> Exp[2. Expression & Loader Compilation]
-    Exp --> Exec[3. SQLAlchemy Execution & Pagination]
-```
+    Exp --> Exec[3. SQLAlchemy Execution & Pagination]"/>
 
 1. **Validation & Security Assertion:** Inspects all requested field paths, sort columns, and inclusion routes against `ctx.restricted_fields` and schema mappers.
 2. **Expression Building & Type Coercion:** Recursively translates structured JSON comparison operators (`eq`, `ne`, `gt`, `lt`, `ge`, `le`, `like`, `ilike`, `contains`, `startswith`, `endswith`, `in`, `between`, `is_null`), inverted operators (`not_like`, `not_ilike`, `not_contains`, `not_startswith`, `not_endswith`, `not_in`, `not_between`, `is_not_null`), and logical grouping blocks (`and`, `or`, `not`) into SQLAlchemy comparison clauses while safely coercing input types (`int`, `float`, `date`, `datetime`, `UUID`, `bool`, and `set`).
