@@ -12,7 +12,7 @@ import { Card, Cards } from 'fumadocs-ui/components/card';
 
 **FastAPI ZCore Framework is a high-performance modular architectural framework built on top of FastAPI, created by [Ali Alf Ostovar](https://github.com/alialfostovar) and maintained by [Baseryn](https://github.com/Baseryn).**
 
-It provides a cohesive set of enterprise-grade design patterns—such as constructor dependency injection with auto-wiring, repository pattern abstractions with bulk mutation optimizations, dynamic schema projections (`Zchema`), transactional Unit of Work, and isolated background tasks—designed to eliminate repetitive boilerplate in growing, high-throughput FastAPI applications.
+It provides a cohesive set of enterprise-grade design patterns—such as constructor dependency injection with auto-wiring, repository pattern abstractions with bulk mutation optimizations, complete soft-delete restoration lifecycles, dynamic schema projections (`Zchema`), automated 8-endpoint CRUD/Lookup scaffolding, transactional Unit of Work, unified exception normalization with debug-gated diagnostics, and isolated background tasks—designed to eliminate repetitive boilerplate in growing, high-throughput FastAPI applications.
 
 Every architectural layer in ZCore is **strictly opt-in**. You can adopt a single pattern in an existing codebase, combine multiple layers, or ignore them entirely. Your application remains a standard FastAPI project at its core.
 
@@ -28,7 +28,7 @@ Misconceptions often arise when comparing modular frameworks to monolithic, opin
 | **An enterprise monolith** | It includes Unit of Work and plugin management. | `UnitOfWork` is a lightweight context manager; `Plugin` is an optional startup registry with DAG topological sorting. Both function seamlessly even in a small, two-file project. |
 | **A replacement for FastAPI** | It exposes its own classes and is imported via `zcore`. | ZCore **extends** FastAPI natively. You continue writing standard `@router` endpoints, using native Pydantic models, and leveraging `Depends()`. ZCore simply offers higher-level architectural abstractions. |
 | **Opinionated or intrusive** | It provides pre-built `Base` classes. | Every method across ZCore base components is fully overridable. "Base" implies a sensible default implementation, not a closed black box. |
-| **All-or-nothing** | It carries the umbrella name of a framework. | You can import and use `Inject[T]`, `background_task`, or `BaseRepository` independently in a project that utilizes zero other ZCore modules. |
+| **All-or-nothing** | It carries the umbrella name of a framework. | You can import and use `Inject[T]`, `background_task`, `register_exception_handlers`, or `BaseRepository` independently in a project that utilizes zero other ZCore modules. |
 
 <Callout type="info" emoji="💡">
   **Architectural Rule:** If a specific ZCore component does not directly solve a structural pain point in your route, model, or service, do not use it. ZCore never imposes self-dependency.
@@ -43,6 +43,7 @@ ZCore does not wrap or abstract away FastAPI; it runs **alongside** it.
 *   **Standard Routing:** You retain full access to FastAPI's `APIRouter`, native background tasks, and exception handlers.
 *   **Native Pydantic V2:** ZCore models (`Zchema`) inherit directly from Pydantic `BaseModel`, ensuring 100% compatibility with native data validation pipelines.
 *   **Dependency Injection Integration:** `Inject[T]` compiles internally down to standard FastAPI `Annotated[T, Depends()]` structures, keeping OpenAPI introspection, Swagger UI documentation, and dependency overrides fully intact.
+*   **Unified Error Normalization:** Integrates with Starlette and FastAPI exception lifecycles to automatically wrap domain errors, 422 validation issues, and uncaught 500 runtime exceptions into a single structured envelope (`ResponseWrapper`), sanitizing Pydantic error traces and gating server internals in production.
 *   **Async Native:** Built specifically for async Python 3.11+, SQLAlchemy 2.0 Async, and ASGI middleware lifecycles.
 
 ---
@@ -95,6 +96,7 @@ class TaskRepo(BaseRepository[Task]):
 
 @router.get("/tasks")
 async def list_tasks(repo: Inject[TaskRepo]):
+    # Includes dynamic search, soft-delete, and restoration out-of-the-box
     return await repo.get_list()
 ```
 *No service layer, no base router—just clean repository abstraction.*
@@ -173,11 +175,13 @@ Clarity regarding framework boundaries helps determine when ZCore is an appropri
 ## When to Adopt ZCore (And When to Skip It)
 
 ### ZCore helps when...
-*   You are writing repetitive CRUD endpoints and bulk data-access queries across multiple models.
+*   You are writing repetitive CRUD and field-projected lookup endpoints across multiple models.
+*   You need full soft-delete lifecycles, batch restorations (`restore_multi`), and hard-delete bypasses (`?force=true`).
 *   You need dynamic, role-based field visibility on schemas without maintaining dozens of duplicate Pydantic models.
 *   You require atomic multi-table writes with deferred event publishing via Unit of Work.
 *   You prefer clean constructor injection with auto-wiring over verbose, nested `Depends()` parameters.
 *   You need to run asynchronous background routines with guaranteed database session and context isolation.
+*   You want a unified, production-safe error envelope across all domain, validation, and unhandled 500 exceptions.
 
 ### ZCore is unnecessary when...
 *   Your application consists of 1–2 simple endpoints with minimal business logic.
@@ -195,10 +199,10 @@ Clarity regarding framework boundaries helps determine when ZCore is an appropri
 You control the pace of adoption. Moving rightward along the spectrum is entirely optional and driven solely by project growth:
 
 1. **Plain FastAPI** (Zero ZCore dependencies)
-2. **Targeted Utilities** (Adopting `Inject[T]`, `background_task`, or `UnitOfWork`)
-3. **Data Access Layer** (`BaseRepository`, `SoftDeleteMixin`, and `BaseService`)
-4. **Security & Projection** (`Zchema` for role-based field filtering)
-5. **Full Orchestration** (`BaseRouter` and modular `Plugin` architectures)
+2. **Targeted Utilities** (Adopting `Inject[T]`, `background_task`, `register_exception_handlers`, or `UnitOfWork`)
+3. **Data Access Layer** (`BaseRepository` with soft-delete/restoration, and `BaseService`)
+4. **Security & Projection** (`Zchema` for role-based field filtering and input protection)
+5. **Full Orchestration** (`BaseRouter` with 8 standard endpoints including `/lookup`, and modular `Plugin` architectures)
 
 ---
 
@@ -212,10 +216,10 @@ You control the pace of adoption. Moving rightward along the spectrum is entirel
     Isolated AsyncSessions and IoC auto-wiring for background routines.
   </Card>
   <Card title="BaseRepository" href="/docs/api-reference/repository">
-    Async CRUD, bulk RETURNING mutations, keyset pagination, and dynamic search.
+    Async CRUD, soft-delete restoration, bulk RETURNING mutations, keyset pagination, and dynamic search.
   </Card>
-  <Card title="BaseService" href="/docs/api-reference/service">
-    Isolate domain business logic with pre/post execution hooks.
+  <Card title="BaseRouter & Lookups" href="/docs/api-reference/router">
+    Scaffold 8 standard endpoints with field-projected lookups and route specificity sorting.
   </Card>
   <Card title="Zchema" href="/docs/api-reference/zchema">
     Dynamic field-level security pruning for responses, inputs, and OpenAPI schemas.
