@@ -8,7 +8,7 @@
     "register-singleton-vs-scoped",
     "run-background-tasks",
     "override-repository",
-    "implement-lookup-endpoints",
+    "extend-base-router",
     "inter-module-contracts-and-wiring",
     "use-scope-query",
     "implement-cursor-pagination",

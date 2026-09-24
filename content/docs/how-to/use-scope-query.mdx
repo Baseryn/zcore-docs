@@ -11,7 +11,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 Writing manual `WHERE tenant_id == ...` or `WHERE deleted_at IS NULL` clauses on every single database query is error-prone and risks catastrophic data leaks.
 
 ZCore solves this at the architectural root: 
-1. **`SoftDeleteMixin`:** Provides out-of-the-box timestamp-based soft deletion with automatic query filtering, `soft_delete()`, and `restore()` helpers.
+1. **`SoftDeleteMixin`:** Provides out-of-the-box timestamp-based soft deletion with automatic query filtering, `soft_delete()`, `restore()`, and atomic batch recovery helpers.
 2. **`scope_query`:** `BaseRepository` automatically inspects models for a `@classmethod` named `scope_query` before executing *any* read, listing, count, or dynamic search query.
 
 ---
@@ -106,16 +106,28 @@ ZCore solves this at the architectural root:
   </Step>
 
   <Step>
-    ### 5. Soft-Deleting and Restoring Records
+    ### 5. Soft-Deleting, Restoring, and Forced Deletions
+
+    In addition to instance-level methods, `BaseRepository` and `BaseService` provide high-level, atomic operations:
 
     ```python
-    # Soft delete an entity:
+    # 1. Soft-delete a record (or list of records) via repository
+    await task_repo.delete(task_id)                        # Automatic soft-delete
+    await task_repo.delete_multi([task_id_1, task_id_2])   # Batch atomic soft-delete
+
+    # 2. Force permanent physical deletion (Hard Delete)
+    await task_repo.delete(task_id, force=True)
+    await task_repo.delete_multi([task_id_1, task_id_2], force=True)
+
+    # 3. Restore soft-deleted records
+    restored_task = await task_repo.restore(task_id)       # Single restoration
+    restored_list = await task_repo.restore_multi(         # Atomic batch restoration
+        [task_id_1, task_id_2]
+    )
+
+    # 4. Instance-level mutation fallback
     task = await task_repo.get(id=task_id)
     task.soft_delete()
-    await db.flush()
-
-    # Restore a soft-deleted entity:
-    task.restore()
     await db.flush()
     ```
   </Step>

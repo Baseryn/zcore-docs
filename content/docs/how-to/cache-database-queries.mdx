@@ -1,13 +1,13 @@
 ---
 title: How to cache database queries
-description: Accelerate queries using BaseCache with automatic Pydantic deserialization and resilient local LRU fallback.
+description: Accelerate queries using BaseCache with automatic Pydantic deserialization, tunable settings, and resilient local LRU fallback.
 icon: Database
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore's `BaseCache` provides a unified caching interface. It connects to distributed Redis instances while seamlessly degrading to a thread-safe in-memory `TTLLRUCache` if Redis is offline.
+ZCore's `BaseCache` provides a unified caching interface. It connects to distributed Redis instances while seamlessly degrading to a thread-safe in-memory `TTLLRUCache` if Redis is offline or unconfigured.
 
 <Steps>
   <Step>
@@ -28,7 +28,7 @@ ZCore's `BaseCache` provides a unified caching interface. It connects to distrib
   <Step>
     ### 2. Implement the Cache-Aside Pattern
 
-    Instantiate `BaseCache` with a domain prefix namespace, and pass `target_type` to automatically parse JSON into validated Pydantic models:
+    Instantiate `BaseCache` with a domain prefix namespace. `BaseCache` automatically derives default TTLs and local size boundaries from your `Settings`, and accepts `target_type` to auto-deserialize JSON into validated Pydantic models:
 
     ```python
     # services.py or repositories.py
@@ -40,6 +40,8 @@ ZCore's `BaseCache` provides a unified caching interface. It connects to distrib
     class TaskService:
         def __init__(self, repo):
             self.repo = repo
+            # Inherits default TTL from settings.CACHE_DEFAULT_TTL (default: 3600s)
+            # and local maxsize from settings.CACHE_LOCAL_MAXSIZE (default: 1000 items)
             self.cache = BaseCache[TaskResponse](prefix="tasks")
 
         async def get_task_details(self, task_id: uuid.UUID) -> TaskResponse:
@@ -54,8 +56,8 @@ ZCore's `BaseCache` provides a unified caching interface. It connects to distrib
             db_record = await self.repo.get(id=task_id)
             task_response = TaskResponse.model_validate(db_record)
 
-            # 3. Populate Cache (Auto-serializes Pydantic model to JSON, default TTL = 1 hour)
-            await self.cache.set(cache_key, task_response, ttl=3600)
+            # 3. Populate Cache (ttl is optional; falls back to instance default_ttl)
+            await self.cache.set(cache_key, task_response)
             
             return task_response
     ```
@@ -70,14 +72,26 @@ ZCore's `BaseCache` provides a unified caching interface. It connects to distrib
     async def update_task(self, task_id: uuid.UUID, schema):
         updated = await self.repo.update(task_id, schema)
         
-        # Evict key from both Redis and local memory store
+        # Evict key from both Redis and local memory fallback store
         await self.cache.delete(str(task_id))
         return updated
     ```
   </Step>
 </Steps>
 
+---
+
+## Dynamic Framework Settings
+
+ZCore manages caching boundaries centrally via environment variables and the `Settings` class:
+
+| Setting Key | Default | Description |
+|---|---|---|
+| `CACHE_DEFAULT_TTL` | `3600` (1 hour) | Default fallback TTL in seconds when `ttl` is omitted in `cache.set()`. |
+| `CACHE_LOCAL_MAXSIZE` | `1000` | Maximum entries retained simultaneously in the local in-memory `TTLLRUCache`. |
+| `CACHE_EVICTION_INTERVAL` | `60` | Duration in seconds between automated garbage collection sweeps on expired keys. |
+
 <Callout type="info" emoji="🛡️">
   **Fail-Safe In-Memory Fallback:**
-  If Redis is unavailable or unconfigured (`REDIS_URL=None`), `BaseCache` automatically stores records in an in-memory `TTLLRUCache`. Expired keys are periodically swept by a background worker loop every 60 seconds.
+  If Redis is unavailable or unconfigured (`REDIS_URL=None`), `BaseCache` automatically stores records in an in-memory `TTLLRUCache`. Expired keys are periodically swept by a non-blocking background worker loop scheduled at `settings.CACHE_EVICTION_INTERVAL` seconds.
 </Callout>

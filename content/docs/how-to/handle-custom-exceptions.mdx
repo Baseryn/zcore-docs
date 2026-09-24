@@ -7,7 +7,7 @@ icon: TriangleAlert
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore eliminates inconsistent error payloads across endpoints. Raising any `AppException` subclass automatically formats the response into a unified `ResponseWrapper` envelope with the correct HTTP status code.
+ZCore eliminates inconsistent error payloads across endpoints. Raising any `AppException` subclass or encountering runtime validation errors automatically formats the response into a unified `ResponseWrapper` envelope with the correct HTTP status code.
 
 <Steps>
   <Step>
@@ -17,6 +17,7 @@ ZCore eliminates inconsistent error payloads across endpoints. Raising any `AppE
 
     ```python
     # tasks/services.py
+    import uuid
     from zcore import BaseService
     from zcore.exceptions import EntityNotFound, ValidationError
     from .models import Task
@@ -70,26 +71,40 @@ ZCore eliminates inconsistent error payloads across endpoints. Raising any `AppE
   </Step>
 
   <Step>
-    ### 3. Ensure Handler Registration in `main.py`
+    ### 3. Registering Unified Handlers in `main.py`
 
-    Verify that `app_exception_handler` is registered on your root FastAPI app:
+    ZCore provides a single registration function, `register_exception_handlers`, that registers normalization handlers for all exception categories:
 
     ```python
     # main.py
     from fastapi import FastAPI
-    from zcore.exceptions import AppException, app_exception_handler
+    from zcore import register_exception_handlers
 
     app = FastAPI(...)
 
-    # Intercepts AppException and all its subclasses automatically
-    app.add_exception_handler(AppException, app_exception_handler)
+    # Normalizes domain errors, Pydantic 422s, HTTPExceptions, and 500 runtime errors
+    register_exception_handlers(app)
+    ```
+
+    You can also selectively toggle specific handlers using boolean flags:
+
+    ```python
+    register_exception_handlers(
+        app,
+        include_app_exceptions=True,
+        include_validation_exceptions=True,
+        include_http_exceptions=True,
+        include_response_validation_exceptions=True,
+        include_unhandled_exceptions=True,
+    )
     ```
   </Step>
 </Steps>
 
 <Callout type="info" emoji="📦">
-  **Uniform Response Structure:**
-  Any raised exception output is automatically serialized through ZCore's custom JSON encoder into:
+  **Uniform Response Envelope:**
+  Every error intercepted by ZCore is serialized into a standard `ResponseWrapper[None]` structure:
+
   ```json
   {
     "success": false,
@@ -104,4 +119,25 @@ ZCore eliminates inconsistent error payloads across endpoints. Raising any `AppE
     }
   }
   ```
+</Callout>
+
+---
+
+## Handlers & Debug-Gated Security
+
+`register_exception_handlers(app)` attaches five dedicated exception handlers:
+
+| Exception Category | HTTP Status | Response Handling |
+|---|---|---|
+| **`AppException`** | `exc.status_code` | Extracts custom message and context payload into `meta.payload`. |
+| **`RequestValidationError`** | `422` | Converts Pydantic error tuples into clean dot-separated paths (e.g. `body.items.0.title`) and returns sanitized error summaries. |
+| **`StarletteHTTPException`** | `exc.status_code` | Preserves custom HTTP headers and maps the detail message. |
+| **`ResponseValidationError`** | `500` | Catches internal endpoint output schema mismatches. |
+| **`Exception` (Catch-all)** | `500` | Catches any uncaught runtime errors to prevent server crashes. |
+
+<Callout type="warn" emoji="🔒">
+  **Production Data Leak Protection (Debug-Gating):**
+  For `ResponseValidationError` and generic `Exception` (500 errors), full stack traces and diagnostic details are **only rendered in the JSON response when `settings.DEBUG = True`**. 
+
+  In production (`DEBUG = False`), internal error details are masked with a safe, generic message (`"Internal server error"`) while the complete stack trace is safely recorded in your structured logs.
 </Callout>

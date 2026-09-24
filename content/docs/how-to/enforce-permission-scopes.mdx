@@ -18,6 +18,7 @@ When a model inherits from ZCore's `Base`, it automatically exposes the `.action
 | `Task.actions().CREATE` | `"tasks:create"` | `POST /` |
 | `Task.actions().VIEW` | `"tasks:view"` | `GET /{id}` |
 | `Task.actions().LISTVIEW` | `"tasks:listview"` | `GET /` & `POST /search` |
+| `Task.actions().LOOKUP` | `"tasks:lookup"` | `POST /lookup` |
 | `Task.actions().UPDATE` | `"tasks:update"` | `PUT /{id}` & `PATCH /{id}` |
 | `Task.actions().DELETE` | `"tasks:delete"` | `DELETE /{id}` |
 
@@ -25,7 +26,7 @@ When a model inherits from ZCore's `Base`, it automatically exposes the `.action
   <Step>
     ### 1. Automatic Scoping in `BaseRouter` (Zero-Config)
 
-    By simply declaring `model = Task` on your `BaseRouter`, all 7 CRUD endpoints are **automatically protected** with their corresponding `HasScopes(...)` rules:
+    By simply declaring `model = Task` on your `BaseRouter`, all 8 standard endpoints are **automatically protected** with their corresponding `HasScopes(...)` rules:
 
     ```python
     # routers.py
@@ -44,6 +45,7 @@ When a model inherits from ZCore's `Base`, it automatically exposes the `.action
 
     # POST /tasks automatically requires "tasks:create"
     # GET /tasks/{id} automatically requires "tasks:view"
+    # POST /tasks/lookup automatically requires "tasks:lookup"
     # DELETE /tasks/{id} automatically requires "tasks:delete"
     router_instance = TaskRouter()
     ```

@@ -107,7 +107,7 @@ ZCore provides structured configuration schemas for the database engine (`Databa
   <Step>
     ### Option B: Declarative `LoggingSettings`
 
-    Configure file rotation, slow SQL query thresholds, and muted loggers in your `Settings` subclass:
+    Configure file rotation boundaries (`max_bytes`, `backup_count`), slow SQL query thresholds, and muted loggers in your `Settings` subclass:
 
     ```python
     # config.py
@@ -119,7 +119,9 @@ ZCore provides structured configuration schemas for the database engine (`Databa
             json_format=None,              # None: Console in Debug, JSON in Production
             log_sql_queries=True,          # Log executed SQL queries
             slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms
-            file_path="./logs/app.log",    # RotatingFileHandler (10MB, 5 backups)
+            file_path="./logs/app.log",    # Enables RotatingFileHandler
+            max_bytes=20 * 1024 * 1024,    # Rotate when file reaches 20MB (default: 10MB)
+            backup_count=10,               # Retain 10 rotated log backups (default: 5)
             muted_loggers=[
                 "uvicorn",
                 "uvicorn.access",
@@ -141,7 +143,12 @@ ZCore provides structured configuration schemas for the database engine (`Databa
 
     # 1. Custom handlers and processors
     setup_logging(
-        config=LoggingSettings(level="DEBUG", file_path="./logs/app.log"),
+        config=LoggingSettings(
+            level="DEBUG",
+            file_path="./logs/app.log",
+            max_bytes=10 * 1024 * 1024,
+            backup_count=5
+        ),
         extra_handlers=[logging.StreamHandler()],
         log_level="DEBUG"
     )
