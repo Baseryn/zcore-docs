@@ -1,13 +1,13 @@
 ---
 title: BaseRouter
-description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, and endpoint overrides.
+description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, and endpoint overrides.
 icon: Network
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRouter` automatically scaffolds standard security-aware CRUD endpoints (POST, GET, GET_ALL, SEARCH, UPDATE, PATCH, DELETE) and coordinates services, validation schemas, and pagination handlers.
+`BaseRouter` automatically scaffolds 8 standard security-aware CRUD, search, and field-projected lookup endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`) with primary key reflection, dependency injection, and specificity route sorting.
 
 ## Class Definition
 
@@ -29,7 +29,7 @@ These attributes configure the scaffolded endpoints in your subclass:
   type={{
     model: {
       type: 'Type[Base]',
-      description: 'The database declarative model class. Used for resolving permission actions.',
+      description: 'The database declarative model class. Used for resolving primary keys and permission actions.',
     },
     create_schema: {
       type: 'Type[CreateSchemaType] | None',
@@ -45,6 +45,31 @@ These attributes configure the scaffolded endpoints in your subclass:
       type: 'Type[BaseModel] | None',
       default: 'None',
       description: 'Pydantic schema class representing response payloads.',
+    },
+    lookup_schema: {
+      type: 'Type[BaseModel] | None',
+      default: 'None',
+      description: 'Minimal schema class representing relational reference lookups (POST /lookup).',
+    },
+    allowed_lookup_fields: {
+      type: 'set[str] | None',
+      default: 'None',
+      description: 'Explicit whitelist of filterable/sortable fields for lookup queries. If None, derived from lookup_schema.',
+    },
+    max_lookup_size: {
+      type: 'int | None',
+      default: 'None',
+      description: 'Maximum records threshold allowed in lookup responses (falls back to max_page_size or settings.PAGINATION_MAX_SIZE).',
+    },
+    max_page_size: {
+      type: 'int | None',
+      default: 'None',
+      description: 'Upper bound on page size across list and search queries (falls back to settings.PAGINATION_MAX_SIZE).',
+    },
+    default_page_size: {
+      type: 'int | None',
+      default: 'None',
+      description: 'Fallback record count per page when omitted in query requests (falls back to settings.PAGINATION_DEFAULT_SIZE).',
     },
     service: {
       type: 'Type[BaseService] | Any',
@@ -116,6 +141,10 @@ from zcore import RouteKey
       type: '"SEARCH"',
       description: 'Dynamic search query endpoint with JSON filters (POST /search).',
     },
+    LOOKUP: {
+      type: '"LOOKUP"',
+      description: 'Lightweight, field-projected relational reference query endpoint (POST /lookup).',
+    },
     UPDATE: {
       type: '"UPDATE"',
       description: 'Full record update endpoint (PUT /{id}).',
@@ -126,7 +155,7 @@ from zcore import RouteKey
     },
     DELETE: {
       type: '"DELETE"',
-      description: 'Single entity deletion endpoint (DELETE /{id}).',
+      description: 'Single entity deletion endpoint (DELETE /{id}) with optional ?force=true support.',
     }
   }}
 />
@@ -143,6 +172,13 @@ Retrieves the database/permission action name for a given route key using `model
 def get_route_action(self, route_key: RouteKey) -> str: ...
 ```
 
+* `RouteKey.POST` $\rightarrow$ `model.actions().CREATE`
+* `RouteKey.GET` $\rightarrow$ `model.actions().VIEW`
+* `RouteKey.GET_ALL` / `RouteKey.SEARCH` $\rightarrow$ `model.actions().LISTVIEW`
+* `RouteKey.LOOKUP` $\rightarrow$ `model.actions().LOOKUP`
+* `RouteKey.UPDATE` / `RouteKey.PATCH` $\rightarrow$ `model.actions().UPDATE`
+* `RouteKey.DELETE` $\rightarrow$ `model.actions().DELETE`
+
 ### `get_route_dependencies`
 
 Generates default route dependencies (authentication, authorization, logging, etc.). Subclasses can override this method to inject dynamic, runtime dependencies per operation.
@@ -155,11 +191,11 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
   type={{
     route_key: {
       type: 'RouteKey',
-      description: 'The target operational route key (e.g., RouteKey.DELETE).',
+      description: 'The target operational route key (e.g., RouteKey.LOOKUP).',
     },
     action: {
       type: 'str',
-      description: 'The computed database permission action identifier (e.g., "tasks:delete").',
+      description: 'The computed database permission action identifier (e.g., "tasks:lookup").',
     },
     returns: {
       type: 'list[Any]',
@@ -167,10 +203,6 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
     }
   }}
 />
-
-<Callout type="info" emoji="💡">
-  By default, `get_route_dependencies` returns `[HasScopes(action)]` to automatically enforce permission scopes mapped from `model.actions()`.
-</Callout>
 
 ---
 
@@ -198,6 +230,11 @@ async def get_all_endpoint(self, service: BaseService, pagination: Any = None) -
 async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper: ...
 ```
 
+### `lookup_endpoint`
+```python
+async def lookup_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper: ...
+```
+
 ### `update_endpoint`
 ```python
 async def update_endpoint(self, id: Any, data_in: Any, service: BaseService) -> ResponseWrapper: ...
@@ -210,5 +247,19 @@ async def patch_endpoint(self, id: Any, data_in: Any, service: BaseService) -> R
 
 ### `delete_endpoint`
 ```python
-async def delete_endpoint(self, id: Any, service: BaseService) -> ResponseWrapper: ...
+async def delete_endpoint(self, id: Any, service: BaseService, force: bool = False) -> ResponseWrapper: ...
 ```
+
+---
+
+## Architectural Mechanisms
+
+<Callout type="info" emoji="⚡">
+  **Intelligent Projection (`_resolve_lookup_projections`):**
+  When processing `/lookup` queries, `BaseRouter` introspects `lookup_schema` and maps declared properties directly to model column attributes. It builds a database `load_only(*fields)` projection, automatically incorporates the primary key, and configures relationship loaders (`selectinload` for collections, `joinedload` for scalars). Only attributes declared in the lookup schema are loaded from the database.
+</Callout>
+
+<Callout type="warn" emoji="🛡️">
+  **Route Specificity Sorting (`_sort_routes`):**
+  `BaseRouter` sorts registered routes using hierarchical specificity scoring. Static path segments (such as `/search` and `/lookup`) are prioritized and evaluated before dynamic parameterized paths (such as `/{id}`), preventing FastAPI route shadowing collisions.
+</Callout>

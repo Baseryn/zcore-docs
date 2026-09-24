@@ -1,6 +1,6 @@
 ---
 title: Settings & Configuration
-description: API reference for the Pydantic V2 Settings module, SettingsProxy lazy loader, and environment initializers.
+description: API reference for the Pydantic V2 Settings module, SettingsProxy lazy loader, framework boundaries, and environment initializers.
 icon: Cog
 ---
 
@@ -12,6 +12,7 @@ The `Settings` class parses and validates environment variables and file-based s
 ## Class Definition
 
 ```python
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from zcore.config import Settings
 
@@ -103,6 +104,46 @@ class Settings(BaseSettings):
       type: 'int',
       default: '7',
       description: 'Lifespan duration for refresh tokens in days.',
+    },
+    AUTH_CACHE_TTL: {
+      type: 'int',
+      default: '300',
+      description: 'Expiration duration in seconds for cached user authentication sessions.',
+    },
+    PAGINATION_DEFAULT_SIZE: {
+      type: 'int',
+      default: '20',
+      description: 'Default page size for paginated list queries when omitted in requests.',
+    },
+    PAGINATION_MAX_SIZE: {
+      type: 'int',
+      default: '100',
+      description: 'Maximum allowed upper bound for page size parameters across queries.',
+    },
+    SEARCH_MAX_DEPTH: {
+      type: 'int',
+      default: '3',
+      description: 'Default fallback depth limit for dynamic search filters and relation eager-loading.',
+    },
+    CACHE_LOCAL_MAXSIZE: {
+      type: 'int',
+      default: '1000',
+      description: 'Maximum entries permitted simultaneously in the local in-memory fallback cache.',
+    },
+    CACHE_DEFAULT_TTL: {
+      type: 'int',
+      default: '3600',
+      description: 'Default Time-To-Live in seconds for cached records.',
+    },
+    CACHE_EVICTION_INTERVAL: {
+      type: 'int',
+      default: '60',
+      description: 'Rest period in seconds between background memory cache garbage collection sweeps.',
+    },
+    STREAM_QUEUE_MAXSIZE: {
+      type: 'int',
+      default: '100',
+      description: 'Maximum capacity of bounded user listener queues in StreamManager.',
     },
     STORAGE_PATH: {
       type: 'str',
@@ -198,18 +239,20 @@ class DatabaseSettings(BaseModel):
 
 ### `LoggingSettings`
 
-Schema configuring structured logging, file rotation, and SQL query interception:
+Schema configuring structured logging, file rotation parameters, and SQL query interception:
 
 ```python
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Any
 
 class LoggingSettings(BaseModel):
     level: str = "INFO"
-    json_format: Optional[bool] = None
+    json_format: bool | None = None
     log_sql_queries: bool = True
-    slow_query_threshold_ms: Optional[float] = None
-    file_path: Optional[str] = None
+    slow_query_threshold_ms: float | None = None
+    file_path: str | None = None
+    max_bytes: int = 10 * 1024 * 1024
+    backup_count: int = 5
     muted_loggers: list[str] = Field(
         default_factory=lambda: [
             "uvicorn",
@@ -229,7 +272,7 @@ class LoggingSettings(BaseModel):
       description: 'Active logging level string (DEBUG, INFO, WARNING, ERROR, CRITICAL).',
     },
     json_format: {
-      type: 'Optional[bool]',
+      type: 'bool | None',
       default: 'None',
       description: 'Explicit JSON output flag. If None, defaults to JSON in production and colored console in debug mode.',
     },
@@ -239,14 +282,24 @@ class LoggingSettings(BaseModel):
       description: 'Boolean flag to toggle SQL statement execution logging.',
     },
     slow_query_threshold_ms: {
-      type: 'Optional[float]',
+      type: 'float | None',
       default: 'None',
       description: 'Execution threshold in milliseconds to log slow SQL queries specifically.',
     },
     file_path: {
-      type: 'Optional[str]',
+      type: 'str | None',
       default: 'None',
-      description: 'Target filesystem path for rotating log files (10MB per file, 5 backups).',
+      description: 'Target filesystem path for rotating log files.',
+    },
+    max_bytes: {
+      type: 'int',
+      default: '10485760 (10MB)',
+      description: 'Maximum size in bytes before a log file is rotated.',
+    },
+    backup_count: {
+      type: 'int',
+      default: '5',
+      description: 'Number of backup log files to retain after rotation.',
     },
     muted_loggers: {
       type: 'list[str]',
@@ -311,7 +364,7 @@ active_settings = get_settings()
 <TypeTable
   type={{
     settings_class: {
-      type: 'Type[T]',
+      type: 'type[T]',
       default: 'Settings',
       description: 'The class type of the settings to resolve.',
     },

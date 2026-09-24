@@ -1,18 +1,18 @@
 ---
 title: BaseAuth
-description: API reference for the generic BaseAuth authentication template and dynamic context binding pipeline.
+description: API reference for the generic BaseAuth authentication template, dynamic cache TTL, and context binding pipeline.
 icon: UserCheck
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseAuth` is a generic Template-Method authentication dependency. It coordinates JWT decoding, automatic user caching, active-state assertions, and dynamically binds schema attributes directly onto the shared `ZContext`.
+`BaseAuth` is a generic Template-Method authentication dependency. It coordinates JWT decoding, automatic user session caching, active-state assertions, and dynamically binds schema attributes directly onto the shared `ZContext`.
 
 ## Class Definition
 
 ```python
-from typing import Generic, TypeVar, Type, Any
+from typing import Generic, TypeVar, Any
 from pydantic import BaseModel
 from zcore import BaseAuth
 
@@ -21,11 +21,11 @@ T = TypeVar("T", bound=BaseModel)
 class BaseAuth(Generic[T]):
     def __init__(
         self,
-        user_schema: Type[T],
+        user_schema: type[T],
         identity_claim: str = "sub",
         token_type: str = "access",
         cache_prefix: str = "auth",
-        cache_ttl: int = 300
+        cache_ttl: int | None = None
     ) -> None:
         ...
 ```
@@ -37,7 +37,7 @@ class BaseAuth(Generic[T]):
 <TypeTable
   type={{
     user_schema: {
-      type: 'Type[T]',
+      type: 'type[T]',
       description: 'The validated Pydantic model representation of the user.',
     },
     identity_claim: {
@@ -56,9 +56,9 @@ class BaseAuth(Generic[T]):
       description: 'Cache prefix namespace used by BaseCache for storing resolved user profiles.',
     },
     cache_ttl: {
-      type: 'int',
-      default: '300',
-      description: 'Expiration lifespan of cached user instances in seconds (5 minutes).',
+      type: 'int | None',
+      default: 'settings.AUTH_CACHE_TTL (300)',
+      description: 'Expiration lifespan of cached user instances in seconds. If None, resolves dynamically from settings.AUTH_CACHE_TTL (default: 300s / 5 minutes).',
     }
   }}
 />
@@ -126,7 +126,7 @@ async def __call__(
   1. **Token Extraction:** Extracts the Bearer token via `OAuth2PasswordBearer(tokenUrl="token")`.
   2. **JWT Decoding:** Decodes the token using `Security.decode_jwt()`, validating the signature, expiration, and asserting `type == token_type`.
   3. **Cache-Aside Check:** Checks `BaseCache(prefix="auth")` for key `user:{identity}`. If a cache hit occurs, it deserializes directly into `user_schema`.
-  4. **Database Resolution:** If a cache miss occurs, invokes `await self.fetch_user(identity)`, asserts `is_active == True`, validates with `user_schema.model_validate(db_user)`, and populates the cache for 300 seconds.
+  4. **Database Resolution:** If a cache miss occurs, invokes `await self.fetch_user(identity)`, asserts `is_active == True`, validates with `user_schema.model_validate(db_user)`, and populates the cache using the resolved `cache_ttl` (`settings.AUTH_CACHE_TTL`).
   5. **Dynamic Context Population:**
      * `user.id` $\rightarrow$ `ctx.user_id`
      * `user.all_restricted_fields` $\rightarrow$ `ctx.restricted_fields` (as an immutable `frozenset`)

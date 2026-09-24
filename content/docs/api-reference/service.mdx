@@ -1,19 +1,21 @@
 ---
 title: BaseService
-description: Complete API reference for the BaseService class, CRUD orchestration, execution methods, and single/bulk lifecycle hooks.
+description: Complete API reference for the BaseService class, CRUD orchestration, restoration methods, execution delegators, and single/bulk lifecycle hooks.
 icon: Layers
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-`BaseService` orchestrates domain logic, coordinates transaction boundaries via `_safe_commit()`, and exposes comprehensive single and batch (`_multi`) lifecycle interception hooks.
+`BaseService` orchestrates domain logic, coordinates transaction boundaries via `_safe_commit()`, manages soft-delete recovery lifecycles, and exposes comprehensive single and batch (`_multi`) lifecycle interception hooks.
 
 ## Class Definition
 
 ```python
-from typing import Type, Generic
+from typing import Generic, TypeVar
 from zcore import BaseService
-from zcore.db.setup import ModelType
+from zcore.db.setup import Base
+
+ModelType = TypeVar("ModelType", bound=Base)
 
 class BaseService(
     Generic[ModelType],
@@ -21,7 +23,7 @@ class BaseService(
     WriteServiceMixin[ModelType],
     SearchServiceMixin[ModelType]
 ):
-    def __init__(self, model: Type[ModelType], repository: "BaseRepository"):
+    def __init__(self, model: type[ModelType], repository: "BaseRepository"):
         ...
 ```
 
@@ -32,7 +34,7 @@ class BaseService(
 <TypeTable
   type={{
     model: {
-      type: 'Type[ModelType]',
+      type: 'type[ModelType]',
       description: 'The declarative SQLAlchemy model class matching this service domain.',
     },
     repository: {
@@ -54,8 +56,8 @@ Fetches a single domain entity by dynamic filters and applies the `post_get` hoo
 async def get(
     self, 
     *criterion: Any, 
-    fields: Optional[List[Any]] = None, 
-    options: Optional[List[ExecutableOption]] = None,
+    fields: list[Any] | None = None, 
+    options: list[ExecutableOption] | None = None,
     **filters: Any
 ) -> ModelType: ...
 ```
@@ -67,12 +69,12 @@ async def get(
       description: 'Dynamic positional filter expressions.',
     },
     fields: {
-      type: 'List[Any] | None',
+      type: 'list[Any] | None',
       default: 'None',
       description: 'Selective list of model fields to return (load_only).',
     },
     options: {
-      type: 'List[ExecutableOption] | None',
+      type: 'list[ExecutableOption] | None',
       default: 'None',
       description: 'SQLAlchemy execution/loader options.',
     },
@@ -94,9 +96,9 @@ Fetches a sequence of domain entities by their identifiers, applying the `post_g
 ```python
 async def get_by_ids(
     self, 
-    ids: List[Any], 
-    fields: Optional[List[Any]] = None, 
-    options: Optional[List[ExecutableOption]] = None
+    ids: list[Any], 
+    fields: list[Any] | None = None, 
+    options: list[ExecutableOption] | None = None
 ) -> Sequence[ModelType]: ...
 ```
 
@@ -109,8 +111,8 @@ async def get_list(
     self, 
     *criterion: Any,
     pagination: Any = None, 
-    fields: Optional[List[Any]] = None, 
-    options: Optional[List[ExecutableOption]] = None,
+    fields: list[Any] | None = None, 
+    options: list[ExecutableOption] | None = None,
     **filters: Any
 ) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
 ```
@@ -133,7 +135,7 @@ async def count(self, *criterion: Any, **filters: Any) -> int: ...
 
 ---
 
-## Write & Bulk Methods
+## Write, Mutation & Restoration Methods
 
 ### `create`
 
@@ -150,7 +152,7 @@ Orchestrates batch creation of multiple domain entities with `pre_create_multi` 
 ```python
 async def create_multi(
     self, 
-    schemas: List[BaseModel], 
+    schemas: list[BaseModel], 
     refresh: bool = False
 ) -> Sequence[ModelType]: ...
 ```
@@ -176,7 +178,7 @@ Orchestrates batch modifications to multiple existing domain entities with `pre_
 ```python
 async def update_multi(
     self, 
-    data: Dict[ModelType | Any, BaseModel], 
+    data: dict[ModelType | Any, BaseModel], 
     partial: bool = False, 
     refresh: bool = False
 ) -> Sequence[ModelType]: ...
@@ -184,18 +186,34 @@ async def update_multi(
 
 ### `delete`
 
-Orchestrates the deletion of a single entity, triggering `pre_delete`, calling `on_delete`, executing `post_delete`, and invoking `_safe_commit()`.
+Orchestrates the deletion of a single entity, triggering `pre_delete(target, force)`, calling `on_delete(target, force)`, executing `post_delete(model, force)`, and invoking `_safe_commit()`.
 
 ```python
-async def delete(self, target: ModelType | Any) -> ModelType: ...
+async def delete(self, target: ModelType | Any, force: bool = False) -> ModelType: ...
 ```
 
 ### `delete_multi`
 
-Orchestrates batch deletions of multiple database records matching primary keys with `pre_delete_multi` / `post_delete_multi` hooks.
+Orchestrates batch deletions of multiple database records matching primary keys with `pre_delete_multi(ids, force)` / `post_delete_multi(models, force)` hooks.
 
 ```python
-async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
+async def delete_multi(self, ids: list[Any], force: bool = False) -> Sequence[ModelType]: ...
+```
+
+### `restore`
+
+Orchestrates the restoration of a soft-deleted domain entity, triggering `pre_restore`, calling `on_restore`, executing `post_restore`, and invoking `_safe_commit()`.
+
+```python
+async def restore(self, target: ModelType | Any) -> ModelType: ...
+```
+
+### `restore_multi`
+
+Orchestrates batch restorations of multiple soft-deleted records with `pre_restore_multi` / `post_restore_multi` hooks and safe commit.
+
+```python
+async def restore_multi(self, ids: list[Any]) -> Sequence[ModelType]: ...
 ```
 
 ---
@@ -204,13 +222,15 @@ async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
 
 ### `search`
 
-Triggers `pre_search`, executes `on_search`, and processes results through `post_search`.
+Triggers `pre_search`, executes `on_search` (with optional `fields` load_only and `options`), and processes results through `post_search`.
 
 ```python
 async def search(
     self, 
     search_in: SearchRequest, 
-    pagination: Any = None
+    pagination: Any = None,
+    fields: list[Any] | None = None,
+    options: list[ExecutableOption] | None = None,
 ) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
 ```
 
@@ -221,12 +241,14 @@ async def search(
 These methods directly delegate to the bound repository and can be overridden to customize persistence mechanics:
 
 * `async def on_create(self, schema: BaseModel, **extra_data: Any) -> ModelType`
-* `async def on_create_multi(self, schemas: List[BaseModel], refresh: bool = False) -> Sequence[ModelType]`
-* `async def on_update(self, target: ModelType | Any, schema: BaseModel, partial: bool = False, **extra_data: Any) -> Optional[ModelType]`
-* `async def on_update_multi(self, data: Dict[ModelType | Any, BaseModel], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]`
-* `async def on_delete(self, target: ModelType | Any) -> Optional[ModelType]`
-* `async def on_delete_multi(self, ids: List[Any]) -> Sequence[ModelType]`
-* `async def on_search(self, search_in: SearchRequest, pagination: Any = None) -> Any`
+* `async def on_create_multi(self, schemas: list[BaseModel], refresh: bool = False) -> Sequence[ModelType]`
+* `async def on_update(self, target: ModelType | Any, schema: BaseModel, partial: bool = False, **extra_data: Any) -> ModelType | None`
+* `async def on_update_multi(self, data: dict[ModelType | Any, BaseModel], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]`
+* `async def on_delete(self, target: ModelType | Any, force: bool = False) -> ModelType | None`
+* `async def on_delete_multi(self, ids: list[Any], force: bool = False) -> Sequence[ModelType]`
+* `async def on_restore(self, target: ModelType | Any) -> ModelType | None`
+* `async def on_restore_multi(self, ids: list[Any]) -> Sequence[ModelType]`
+* `async def on_search(self, search_in: SearchRequest, pagination: Any = None, fields: list[Any] | None = None, options: list[ExecutableOption] | None = None) -> Any`
 
 ---
 
@@ -238,7 +260,7 @@ Override these hooks in your service to execute custom business logic before or 
   type={{
     'pre_create(schema)': {
       type: 'dict | None',
-      description: 'Triggered before insert. Returning a dict merges those values into the insert payload.',
+      description: 'Triggered before insert. Returning a dict merges values into the insert payload.',
     },
     'post_create(model)': {
       type: 'None',
@@ -268,21 +290,37 @@ Override these hooks in your service to execute custom business logic before or 
       type: 'None',
       description: 'Triggered after batch update.',
     },
-    'pre_delete(id)': {
+    'pre_delete(id, force=False)': {
       type: 'None',
-      description: 'Triggered before single-record deletion.',
+      description: 'Triggered before single-record deletion. Receives force flag.',
     },
-    'post_delete(model)': {
+    'post_delete(model, force=False)': {
       type: 'None',
-      description: 'Triggered after single-record deletion.',
+      description: 'Triggered after single-record deletion. Receives force flag.',
     },
-    'pre_delete_multi(ids)': {
+    'pre_delete_multi(ids, force=False)': {
       type: 'None',
-      description: 'Triggered before batch deletion.',
+      description: 'Triggered before batch deletion. Receives force flag.',
     },
-    'post_delete_multi(models)': {
+    'post_delete_multi(models, force=False)': {
       type: 'None',
-      description: 'Triggered after batch deletion.',
+      description: 'Triggered after batch deletion. Receives force flag.',
+    },
+    'pre_restore(id)': {
+      type: 'None',
+      description: 'Triggered before single-record soft-delete recovery.',
+    },
+    'post_restore(model)': {
+      type: 'None',
+      description: 'Triggered immediately after restoring a soft-deleted record.',
+    },
+    'pre_restore_multi(ids)': {
+      type: 'None',
+      description: 'Triggered before batch soft-delete restoration.',
+    },
+    'post_restore_multi(models)': {
+      type: 'None',
+      description: 'Triggered after batch soft-delete restoration.',
     },
     'post_get(model)': {
       type: 'ModelType',
