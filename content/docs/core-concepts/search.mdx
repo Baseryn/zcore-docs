@@ -14,10 +14,12 @@ Exposing arbitrary database filtering to frontend clients is traditionally dange
 
 When a `SearchRequest` payload is received (typically via `POST /search` or `POST /lookup`), the `SearchEngine` coordinates execution across three distinct phases:
 
-<Mermaid chart="graph TB
+```mermaid
+graph TB
     Req[SearchRequest JSON] --> Val[1. Security & Depth Validation]
     Val --> Exp[2. Expression & Loader Compilation]
-    Exp --> Exec[3. SQLAlchemy Execution & Pagination]"/>
+    Exp --> Exec[3. SQLAlchemy Execution & Pagination]
+```
 
 1. **Validation & Security Assertion:** Inspects all requested field paths, sort columns, and inclusion routes against `ctx.restricted_fields` and schema mappers.
 2. **Expression Building & Type Coercion:** Recursively translates structured JSON comparison operators (`eq`, `ne`, `gt`, `lt`, `ge`, `le`, `like`, `ilike`, `contains`, `startswith`, `endswith`, `in`, `between`, `is_null`), inverted operators (`not_like`, `not_ilike`, `not_contains`, `not_startswith`, `not_endswith`, `not_in`, `not_between`, `is_not_null`), and logical grouping blocks (`and`, `or`, `not`) into SQLAlchemy comparison clauses while safely coercing input types (`int`, `float`, `date`, `datetime`, `UUID`, `bool`, and `set`).
@@ -81,7 +83,8 @@ Malicious clients can craft massive, deeply nested `AND`/`OR` trees or infinite 
 ZCore enforces strict, hierarchical boundaries during the validation sweep:
 
 * **Search Depth Hierarchy:** Filter nesting and relation eager-loading depth (`include`) are resolved hierarchically:
-  $$\text{model.\_\_max\_search\_depth\_\_} \longrightarrow \text{settings.SEARCH\_MAX\_DEPTH} \longrightarrow \text{Default (3)}$$
+  > **model.__max_search_depth__** $\longrightarrow$ **settings.SEARCH_MAX_DEPTH** $\longrightarrow$ **Default (3)**
+  
   Exceeding this threshold raises a `ValidationError("Search query filter structure is too complex.")`.
 * **Automatic Page Size Clamping:** The `size` parameter in `SearchRequest` is validated via Pydantic V2 `model_validator(mode="after")`. If omitted, it defaults to `settings.PAGINATION_DEFAULT_SIZE` (default: 20). If specified, it is strictly clamped between `1` and `settings.PAGINATION_MAX_SIZE` (default: 100), preventing massive unbounded database dumps.
 

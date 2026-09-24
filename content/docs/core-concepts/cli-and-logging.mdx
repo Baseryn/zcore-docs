@@ -33,7 +33,7 @@ zc genenv --force -o .env.production.example
 
 ZCore provides an intelligent development and production server runner that resolves configuration hierarchically:
 
-$$\text{CLI Arguments} \longrightarrow \text{.env File Variables} \longrightarrow \text{Built-in Defaults}$$
+> **CLI Arguments** $\longrightarrow$ **.env File Variables** $\longrightarrow$ **Built-in Defaults**
 
 ### Architecture & Precedence Resolution
 When executing `zc run [app]`, the CLI runner executes the following lifecycle:
@@ -56,15 +56,15 @@ Standard FastAPI, Uvicorn, and SQLAlchemy logging often outputs unformatted, dup
 
 ZCore's `setup_logging()` intercepts and unifies this pipeline through `ProcessorFormatter`:
 
-<Mermaid chart="graph TB
+```mermaid
+graph TB
     Uvicorn[Uvicorn Logs] --> Clear[Clear Muted Handlers]
     SQL[SQLAlchemy Queries] --> Clear
     App[App & Service Logs] --> Clear
     Clear --> Struct[Unified structlog Engine]
     Struct --> Context[structlog.contextvars merge request_id]
-    Context --> Mode{json_format or not DEBUG?}
-    Mode -- False --> Dev[ConsoleRenderer + rich.traceback]
-    Mode -- True --> Prod[JSONRenderer for Grafana/Datadog]"/>
+    Context --> Mode[JSONRenderer in Prod / ConsoleRenderer in Dev]
+```
 
 1. **Suppression of Duplicate Stream Handlers:** Clears default stream handlers from configured loggers in `muted_loggers` (default: `uvicorn`, `uvicorn.access`, `uvicorn.error`, and `sqlalchemy.engine`), setting `propagate = True` to channel all records into `structlog`.
 2. **Contextual Distributed Tracing:** `RequestLogMiddleware` extracts or generates an `x-request-id` header (validated against `^[a-zA-Z0-9\-\.\_\:]{8,64}$`), binds it via `structlog.contextvars.bind_contextvars(request_id=...)`, and appends the correlation ID to response headers. Every log message emitted across repositories, services, or events automatically includes the unique `request_id`, while HTTP requests log `status_code`, `client_ip`, and `duration_ms`.
