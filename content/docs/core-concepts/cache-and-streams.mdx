@@ -57,14 +57,13 @@ For real-time features like WebSockets, Server-Sent Events (SSE), and live notif
 
 ```python
 # Stream Manager Subscription Lifecycle (e.g., in an SSE or WebSocket route)
-import uuid
 from fastapi.responses import StreamingResponse
 from zcore.web import StreamManager
 
 stream_manager = StreamManager()
 
 @router.get("/tasks/stream/{user_id}")
-async def stream_user_events(user_id: uuid.UUID):
+async def stream_user_events(user_id: str):  # Accepts polymorphic user IDs (UUID, int, or str)
     async def event_generator():
         # Automatically subscribes and handles cleanup upon connection closure
         async with stream_manager.subscription(user_id) as queue:

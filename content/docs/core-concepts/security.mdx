@@ -74,14 +74,16 @@ ZCore does not couple your application to a rigid user table. Instead, **`BaseAu
 
 ### Custom Authentication Implementation
 
+`UserProtocol` models user characteristics flexibly: `id` is typed as `Any`, seamlessly supporting auto-incrementing integers, UUIDs, or external strings:
+
 ```python
 # auth.py
-import uuid
+from typing import Any
 from pydantic import BaseModel
 from zcore import BaseAuth
 
 class AppUser(BaseModel):
-    id: uuid.UUID
+    id: Any  # Supports UUID, int, or str
     is_active: bool = True
     is_superuser: bool = False
     scopes: list[str] = []
@@ -89,14 +91,34 @@ class AppUser(BaseModel):
 
 class CustomAuth(BaseAuth[AppUser]):
     # cache_ttl is optional; falls back to settings.AUTH_CACHE_TTL (300s)
-    def __init__(self):
-        super().__init__(user_schema=AppUser, cache_prefix="auth")
+    def __init__(self, auto_error: bool = True):
+        super().__init__(user_schema=AppUser, cache_prefix="auth", auto_error=auto_error)
 
     async def fetch_user(self, identity: str) -> AppUser | None:
         # Resolve user from database repository
         db_user = await user_repo.get_by_username(identity)
         return AppUser.model_validate(db_user) if db_user else None
 ```
+
+### Optional Authentication & Guest Support (`auto_error=False`)
+
+For endpoints that support both authenticated users and anonymous guests (e.g., public catalogs, guest checkouts):
+
+```python
+# main.py
+from zcore.security import get_current_user_stub, get_optional_user_stub
+from auth import CustomAuth
+
+# Standard strict authentication (raises 401 on missing/invalid token)
+strict_auth = CustomAuth(auto_error=True)
+app.dependency_overrides[get_current_user_stub] = strict_auth
+
+# Optional authentication (returns None if unauthenticated)
+optional_auth = CustomAuth(auto_error=False)
+app.dependency_overrides[get_optional_user_stub] = optional_auth
+```
+
+When `auto_error=False`, missing tokens, expired tokens, or inactive accounts return `None` gracefully instead of raising an `AuthError` (401), allowing downstream routes to serve unauthenticated requests while letting `Zchema` prune fields defined in `__private__`.
 
 ---
 

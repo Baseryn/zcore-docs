@@ -96,7 +96,7 @@ ZCore provides **`ZContext`** (`ctx`), an asynchronous execution context store b
 ### Strongly-Typed Properties
 Instead of relying on unstructured dictionary strings, `ZContext` exposes strongly-typed, validated properties:
 
-* **`ctx.user_id`**: Validated as a `uuid.UUID`. Passing a string automatically coerces it to a UUID; invalid formats raise a `ValueError`.
+* **`ctx.user_id`**: Stores the authenticated user identifier as `Any | None`. As of `rc.2`, it seamlessly supports arbitrary identifier formats (such as auto-incrementing integers, UUIDs, or external strings like Auth0/Firebase IDs) without enforcing rigid type constraints.
 * **`ctx.restricted_fields`**: Managed as an immutable `frozenset`. Once loaded during authentication, business logic cannot accidentally mutate restriction paths mid-flight.
 
 ### Dynamic Context Operations
