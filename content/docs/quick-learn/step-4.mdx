@@ -20,9 +20,9 @@ ZCore uses standard SQLAlchemy 2.0 declarative models. It does not force you to 
     import uuid
     from sqlalchemy import String
     from sqlalchemy.orm import Mapped, mapped_column
-    from zcore import Base
+    from zcore import Base, SoftDeleteMixin
 
-    class Task(Base):
+    class Task(Base, SoftDeleteMixin):
         __tablename__ = "tasks"
 
         id: Mapped[uuid.UUID] = mapped_column(

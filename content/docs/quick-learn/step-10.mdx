@@ -69,7 +69,13 @@ Testing architectural layers can be tricky. ZCore provides `ZTestClient`, which 
       **Automated Test Isolation:**
       * **DatabaseRollback:** The test inserted a task, but because `ZTestClient` uses a savepoint transaction, the database is rolled back to a clean state after the test. No cleanup needed.
       * **UserContext:** The `mock_user_id`, `scopes`, and `restricted_fields` were automatically injected into `ZContext` for the duration of the request.
+      * **EventDispatcherSandbox:** Automatically snapshots and restores event subscribers so test events never leak across test cases.
+      * **Typed User Models:** You can pass `user_model=AppUser` directly to `ZTestClient` to mock authentic, validated Pydantic user instances.
       * **Zero Mocking Boilerplate:** You didn't have to mock `Depends(get_db)` or override complex service layers. The `ZTestClient` orchestrated the IoC container for you.
+    </Callout>
+
+    <Callout type="info" emoji="💡">
+      **Tip for Test Sessions:** Use `setup_test_database()` in a pytest session fixture to recreate clean tables before executing your test suite without writing boilerplate asyncio loop runners.
     </Callout>
   </Step>
 </Steps>

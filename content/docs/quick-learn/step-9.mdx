@@ -64,6 +64,12 @@ To make our `Zchema` field-pruning work, we need to authenticate the user, extra
       **Authentication Requirement:**
       Because `BaseAuth` validates the incoming Bearer token automatically, any incoming request must provide a valid JWT token signed by `Security.create_jwt()` containing the user's ID as the `sub` claim and `type="access"`.
     </Callout>
+
+    <Callout type="info" emoji="🛡️">
+      **Optional Authentication & Polymorphic IDs:** 
+      * `UserProtocol.id` accepts arbitrary ID types (`int`, `str`, or `uuid.UUID`).
+      * For public routes that optionally accept authentication (like public task boards or guest checkouts), configure `BaseAuth(user_schema=AppUser, auto_error=False)` and override `get_optional_user_stub` instead of `get_current_user_stub`.
+    </Callout>
   </Step>
 
   <Step>

@@ -27,6 +27,7 @@ Instead of writing 8 redundant route functions for every model, ZCore's `BaseRou
         create_schema = TaskCreate
         update_schema = TaskUpdate
         schema_out = TaskResponse
+        lookup_schema = TaskResponse  # Required to activate the /lookup endpoint
         service = TaskService
         prefix = "/tasks"
         tags = ["Tasks"]
