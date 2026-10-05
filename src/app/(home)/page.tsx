@@ -178,6 +178,7 @@ query = engine.build_query(req)`,
     create_schema = TaskCreate
     update_schema = TaskUpdate
     schema_out = TaskResponse
+    lookup_schema = TaskResponse
     service = TaskService`,
     without: '8 redundant endpoint functions',
   },
@@ -329,7 +330,9 @@ export default function HomePage() {
 
             <div className="p-6 font-mono text-sm leading-relaxed text-zinc-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="text-zinc-600 mb-3"># Step 1: Your standard SQLAlchemy model</div>
-              <div><span className="text-emerald-400">class</span> <span className="text-emerald-300">Task</span>(Base):</div>
+              <div><span className="text-emerald-400">from</span> zcore <span className="text-emerald-400">import</span> Base, SoftDeleteMixin</div>
+              <br/>
+              <div><span className="text-emerald-400">class</span> <span className="text-emerald-300">Task</span>(Base, SoftDeleteMixin):</div>
               <div className="pl-4">__tablename__ = <span className="text-green-400">&quot;tasks&quot;</span></div>
               <div className="pl-4">id: Mapped[uuid.UUID] = mapped_column(primary_key=<span className="text-emerald-400">True</span>, default=uuid.uuid4)</div>
               <div className="pl-4">title: Mapped[str]</div>
@@ -575,7 +578,7 @@ export default function HomePage() {
             <br/>
             <div><span className="text-zinc-600">$</span> cd core_api <span className="text-zinc-600">&amp;&amp;</span> zc startapp order_management</div>
             <div className="text-emerald-400">✔ Modular App &apos;order_management&apos; created</div>
-            <div className="text-zinc-500">  📄 models, schemas, repositories, services, routers, plugin, tests</div>
+            <div className="text-zinc-500">  📄 models, schemas, repositories, services, routers, plugin, test_order_management</div>
             <br/>
             <div><span className="text-zinc-600">$</span> zc run</div>
             <div className="text-zinc-500">INFO:     Uvicorn running on http://127.0.0.1:8000 (Reload: Enabled)</div>
