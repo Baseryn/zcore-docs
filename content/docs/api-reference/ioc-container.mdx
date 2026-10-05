@@ -160,7 +160,7 @@ def resolve(
 Explicit scope cleanup hook called during middleware teardown to purge request-scoped instances.
 
 ```python
-def clear_scope(self, scope_id: str) -> None: ...
+def clear_scope(self, scope_id: str | None = None) -> None: ...
 ```
 
 ---

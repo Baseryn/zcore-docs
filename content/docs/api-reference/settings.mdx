@@ -65,6 +65,11 @@ class Settings(BaseSettings):
       default: '"INFO"',
       description: 'Fallback environment logging level string.',
     },
+    LOG_SQL_QUERIES: {
+      type: 'bool | None',
+      default: 'None',
+      description: 'Flat environment variable overriding LOGGING.log_sql_queries with bidirectional synchronization.',
+    },
     TIMEZONE: {
       type: 'str',
       default: '"UTC"',
@@ -248,17 +253,28 @@ from typing import Any
 class LoggingSettings(BaseModel):
     level: str = "INFO"
     json_format: bool | None = None
-    log_sql_queries: bool = True
+    log_sql_queries: bool = False
     slow_query_threshold_ms: float | None = None
     file_path: str | None = None
     max_bytes: int = 10 * 1024 * 1024
     backup_count: int = 5
     muted_loggers: list[str] = Field(
         default_factory=lambda: [
+            "sqlalchemy.engine",
+        ]
+    )
+    passthrough_loggers: list[str] = Field(
+        default_factory=lambda: [
             "uvicorn",
             "uvicorn.access",
             "uvicorn.error",
-            "sqlalchemy.engine",
+        ]
+    )
+    intercept_loggers: list[str] = Field(
+        default_factory=lambda: [
+            "uvicorn",
+            "uvicorn.access",
+            "uvicorn.error",
         ]
     )
     custom_processors: list[Any] = Field(default_factory=list)
@@ -278,7 +294,7 @@ class LoggingSettings(BaseModel):
     },
     log_sql_queries: {
       type: 'bool',
-      default: 'True',
+      default: 'False',
       description: 'Boolean flag to toggle SQL statement execution logging.',
     },
     slow_query_threshold_ms: {
@@ -303,8 +319,18 @@ class LoggingSettings(BaseModel):
     },
     muted_loggers: {
       type: 'list[str]',
-      default: '["uvicorn", "uvicorn.access", "uvicorn.error", "sqlalchemy.engine"]',
-      description: 'List of external logger names whose outputs are suppressed.',
+      default: '["sqlalchemy.engine"]',
+      description: 'List of external logger names whose outputs are suppressed and propagation disabled.',
+    },
+    passthrough_loggers: {
+      type: 'list[str]',
+      default: '["uvicorn", "uvicorn.access", "uvicorn.error"]',
+      description: 'List of external loggers whose native formatting is preserved in development mode.',
+    },
+    intercept_loggers: {
+      type: 'list[str]',
+      default: '["uvicorn", "uvicorn.access", "uvicorn.error"]',
+      description: 'List of external loggers channeled into structlog JSON formatting in production mode.',
     },
     custom_processors: {
       type: 'list[Any]',

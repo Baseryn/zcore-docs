@@ -4,7 +4,7 @@ description: API reference for the generic BaseAuth authentication template, dyn
 icon: UserCheck
 ---
 
-import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { TypeTable } from 'fumadocs-ui/components/callout';
 import { Callout } from 'fumadocs-ui/components/callout';
 
 `BaseAuth` is a generic Template-Method authentication dependency. It coordinates JWT decoding, automatic user session caching, active-state assertions, and dynamically binds schema attributes directly onto the shared `ZContext`.
@@ -25,7 +25,8 @@ class BaseAuth(Generic[T]):
         identity_claim: str = "sub",
         token_type: str = "access",
         cache_prefix: str = "auth",
-        cache_ttl: int | None = None
+        cache_ttl: int | None = None,
+        auto_error: bool = True
     ) -> None:
         ...
 ```
@@ -59,6 +60,11 @@ class BaseAuth(Generic[T]):
       type: 'int | None',
       default: 'settings.AUTH_CACHE_TTL (300)',
       description: 'Expiration lifespan of cached user instances in seconds. If None, resolves dynamically from settings.AUTH_CACHE_TTL (default: 300s / 5 minutes).',
+    },
+    auto_error: {
+      type: 'bool',
+      default: 'True',
+      description: 'Whether to raise AuthError on missing or invalid tokens. When False, returns None gracefully to support optional authentication.',
     }
   }}
 />
@@ -96,8 +102,8 @@ Executes the core request interception authentication workflow. Functions as a c
 async def __call__(
     self, 
     request: Request, 
-    token: str = Depends(oauth2_scheme)
-) -> T: ...
+    token: str | None = Depends(oauth2_scheme)
+) -> T | None: ...
 ```
 
 <TypeTable
@@ -107,12 +113,12 @@ async def __call__(
       description: 'The incoming FastAPI HTTP request instance.',
     },
     token: {
-      type: 'str',
-      description: 'The extracted Bearer token from the Authorization header.',
+      type: 'str | None',
+      description: 'The extracted Bearer token from the Authorization header, or None if omitted.',
     },
     returns: {
-      type: 'T',
-      description: 'The validated Pydantic schema model instance representing the authenticated user. Raises AuthError on failures.',
+      type: 'T | None',
+      description: 'The validated Pydantic schema model instance representing the authenticated user, or None if unauthenticated and auto_error is False. Raises AuthError on failures when auto_error is True.',
     }
   }}
 />
@@ -123,8 +129,8 @@ async def __call__(
 
 <Callout type="info" emoji="🧩">
   **The `BaseAuth` Pipeline:**
-  1. **Token Extraction:** Extracts the Bearer token via `OAuth2PasswordBearer(tokenUrl="token")`.
-  2. **JWT Decoding:** Decodes the token using `Security.decode_jwt()`, validating the signature, expiration, and asserting `type == token_type`.
+  1. **Token Extraction:** Extracts the Bearer token via `OAuth2PasswordBearer(tokenUrl="token", auto_error=False)`.
+  2. **Token & Claims Verification:** If no token is provided and `auto_error=False`, it exits early returning `None`. Otherwise, decodes the token using `Security.decode_jwt()`, validating the signature, expiration, and asserting `type == token_type`.
   3. **Cache-Aside Check:** Checks `BaseCache(prefix="auth")` for key `user:{identity}`. If a cache hit occurs, it deserializes directly into `user_schema`.
   4. **Database Resolution:** If a cache miss occurs, invokes `await self.fetch_user(identity)`, asserts `is_active == True`, validates with `user_schema.model_validate(db_user)`, and populates the cache using the resolved `cache_ttl` (`settings.AUTH_CACHE_TTL`).
   5. **Dynamic Context Population:**

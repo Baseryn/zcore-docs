@@ -7,7 +7,7 @@ icon: Radio
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`StreamManager` coordinates active listener queues and Redis PubSub operations. It facilitates cluster-wide event routing via subscription channels formatted as `stream:user:<uuid>`, falling back to local memory queues if Redis is unconfigured or offline.
+`StreamManager` coordinates active listener queues and Redis PubSub operations. It facilitates cluster-wide event routing via subscription channels formatted as `stream:user:<user_id>`, falling back to local memory queues if Redis is unconfigured or offline.
 
 ## Class Definition
 
@@ -54,8 +54,8 @@ def init_stream_redis(client: Any) -> None: ...
       description: 'The active shared streaming Redis client, or None if uninitialized.',
     },
     users_queues: {
-      type: 'dict[uuid.UUID, list[asyncio.Queue[Any]]]',
-      description: 'In-memory mapping of active user UUIDs to lists of active bounded asyncio listener queues.',
+      type: 'dict[Any, list[asyncio.Queue[Any]]]',
+      description: 'In-memory mapping of active polymorphic user IDs (UUID, int, str) to lists of active bounded asyncio listener queues.',
     }
   }}
 />
@@ -69,14 +69,14 @@ def init_stream_redis(client: Any) -> None: ...
 Subscribes a user, returning a bounded async listener queue. Queue capacity is dynamically resolved from `settings.STREAM_QUEUE_MAXSIZE` (Default: 100). Initializes background Redis PubSub listeners if this is the first active subscription for a user on this node.
 
 ```python
-async def subscribe(self, user_id: uuid.UUID) -> asyncio.Queue[Any]: ...
+async def subscribe(self, user_id: Any) -> asyncio.Queue[Any]: ...
 ```
 
 <TypeTable
   type={{
     user_id: {
-      type: 'uuid.UUID',
-      description: 'The target user identifier UUID key.',
+      type: 'Any',
+      description: 'The target recipient user identifier key (supports int, str, or uuid.UUID).',
     },
     returns: {
       type: 'asyncio.Queue[Any]',
@@ -90,13 +90,13 @@ async def subscribe(self, user_id: uuid.UUID) -> asyncio.Queue[Any]: ...
 Unsubscribes a specific listener queue for a user. Shuts down background Redis tasks if no active listeners remain in the local registry.
 
 ```python
-async def unsubscribe(self, user_id: uuid.UUID, queue: asyncio.Queue[Any]) -> None: ...
+async def unsubscribe(self, user_id: Any, queue: asyncio.Queue[Any]) -> None: ...
 ```
 
 <TypeTable
   type={{
     user_id: {
-      type: 'uuid.UUID',
+      type: 'Any',
       description: 'The target user identifier key.',
     },
     queue: {
@@ -114,14 +114,14 @@ Asynchronous context manager safely wrapping active user event streams. Guarante
 @asynccontextmanager
 async def subscription(
     self, 
-    user_id: uuid.UUID
+    user_id: Any
 ) -> AsyncGenerator[asyncio.Queue[Any], None]: ...
 ```
 
 <TypeTable
   type={{
     user_id: {
-      type: 'uuid.UUID',
+      type: 'Any',
       description: 'The target user identifier key to stream.',
     },
     returns: {
@@ -136,14 +136,14 @@ async def subscription(
 Publishes an event payload to a target user's stream. Broadcasts cluster-wide across Redis PubSub channel `stream:user:{user_id}`, falling back to local memory delivery if unconfigured.
 
 ```python
-async def publish(self, user_id: uuid.UUID, data: dict[str, Any]) -> None: ...
+async def publish(self, user_id: Any, data: dict[str, Any]) -> None: ...
 ```
 
 <TypeTable
   type={{
     user_id: {
-      type: 'uuid.UUID',
-      description: 'The target recipient user UUID.',
+      type: 'Any',
+      description: 'The target recipient user identifier (UUID, int, or str).',
     },
     data: {
       type: 'dict[str, Any]',
@@ -165,7 +165,6 @@ async def start_listening(self) -> None: ...
 ## Usage Example (Server-Sent Events)
 
 ```python
-import uuid
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from zcore.web import StreamManager
@@ -174,7 +173,7 @@ router = APIRouter()
 stream_manager = StreamManager()
 
 @router.get("/notifications/stream/{user_id}")
-async def stream_notifications(user_id: uuid.UUID):
+async def stream_notifications(user_id: str):
     async def event_generator():
         # Automatically registers and safely tears down queue on client disconnect
         async with stream_manager.subscription(user_id) as queue:

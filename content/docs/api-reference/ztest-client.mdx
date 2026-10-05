@@ -7,13 +7,16 @@ icon: TestTube
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`ZTestClient` is an asynchronous test orchestrator wrapping `httpx.AsyncClient`. It coordinates the entire ZCore runtime lifecycle (IoC container sandboxing, savepoint database rollbacks, and request context mocking) for seamless, zero-boilerplate integration testing.
+`ZTestClient` is an asynchronous test orchestrator wrapping `httpx.AsyncClient`. It coordinates the entire ZCore runtime lifecycle (IoC container sandboxing, event subscriber snapshots, savepoint database rollbacks, and request context mocking) for seamless, zero-boilerplate integration testing.
 
 ## Class Definition
 
 ```python
+from collections.abc import Sequence
 from typing import Any
 from fastapi import FastAPI
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncEngine
 from zcore.testing import ZTestClient
 
 class ZTestClient:
@@ -24,8 +27,12 @@ class ZTestClient:
         scopes: list[str] | None = None,
         is_superuser: bool = False,
         use_db: bool = True,
+        engine: AsyncEngine | None = None,
+        db_dependency: Any | Sequence[Any] | None = None,
+        user_dependency: Any | Sequence[Any] | None = None,
+        user_model: type[BaseModel] | None = None,
         extra_context: dict[str, Any] | None = None,
-        extra_user_attrs: dict[str, Any] | None = None
+        extra_user_attrs: dict[str, Any] | None = None,
     ) -> None:
         ...
 ```
@@ -59,6 +66,26 @@ class ZTestClient:
       type: 'bool',
       default: 'True',
       description: 'If True, wraps the test execution in an isolated database transaction that rolls back on exit.',
+    },
+    engine: {
+      type: 'AsyncEngine | None',
+      default: 'None',
+      description: 'Custom SQLAlchemy AsyncEngine instance to use instead of the global DatabaseManager.',
+    },
+    db_dependency: {
+      type: 'Any | Sequence[Any] | None',
+      default: 'None',
+      description: 'Single or sequence of database session dependencies to override on the target app.',
+    },
+    user_dependency: {
+      type: 'Any | Sequence[Any] | None',
+      default: 'None',
+      description: 'Single or sequence of custom authentication dependencies to override alongside default stubs.',
+    },
+    user_model: {
+      type: 'type[BaseModel] | None',
+      default: 'None',
+      description: 'Custom Pydantic model class to validate and instantiate the mock user instance via user_model.model_validate().',
     },
     extra_context: {
       type: 'dict[str, Any] | None',
@@ -109,6 +136,11 @@ async def test_create_task_endpoint():
 An abstract base class for structuring declarative test suites sharing identical user attributes and application setups:
 
 ```python
+from collections.abc import Sequence
+from typing import Any
+from fastapi import FastAPI
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncEngine
 from zcore.testing import BaseZTest
 
 class BaseZTest(ABC):
@@ -116,9 +148,13 @@ class BaseZTest(ABC):
     user_id: Any = None
     is_active: bool = True
     is_superuser: bool = False
-    scopes: list[str] = None
-    extra_user_attrs: dict[str, Any] = None
-    extra_context: dict[str, Any] = None
+    scopes: list[str] | None = None
+    engine: AsyncEngine | None = None
+    db_dependency: Any | Sequence[Any] | None = None
+    user_dependency: Any | Sequence[Any] | None = None
+    user_model: type[BaseModel] | None = None
+    extra_user_attrs: dict[str, Any] | None = None
+    extra_context: dict[str, Any] | None = None
 ```
 
 <TypeTable
@@ -146,6 +182,26 @@ class BaseZTest(ABC):
       type: 'list[str] | None',
       default: 'None',
       description: 'List of permission scopes assigned to the suite user.',
+    },
+    engine: {
+      type: 'AsyncEngine | None',
+      default: 'None',
+      description: 'Custom AsyncEngine bound to transactional savepoints.',
+    },
+    db_dependency: {
+      type: 'Any | Sequence[Any] | None',
+      default: 'None',
+      description: 'Database session dependency targets to override.',
+    },
+    user_dependency: {
+      type: 'Any | Sequence[Any] | None',
+      default: 'None',
+      description: 'Custom user dependency targets to override.',
+    },
+    user_model: {
+      type: 'type[BaseModel] | None',
+      default: 'None',
+      description: 'Pydantic model class to validate and instantiate the suite user.',
     },
     extra_user_attrs: {
       type: 'dict[str, Any] | None',
@@ -182,5 +238,5 @@ class TestTaskSuite(BaseZTest):
 
 <Callout type="info" emoji="🧪">
   **Orchestrated Internal Fixtures:**
-  `ZTestClient` automatically coordinates `ContainerSandbox` (IoC isolation), `AppLifespan` (plugin startup/shutdown lifespans), `DatabaseRollback` (savepoint transactions), `UserContext` (`ContextVar` store injection), and `DependencyOverride` (`get_current_user_stub` override) on every test run.
+  `ZTestClient` automatically coordinates `ContainerSandbox` (IoC isolation), `EventDispatcherSandbox` (event subscriber isolation), `AppLifespan` (plugin startup/shutdown lifespans), `DatabaseRollback` (savepoint transactions), `UserContext` (`ContextVar` store injection), and `DependencyOverride` (`get_current_user_stub`, `get_optional_user_stub`, and any custom targets) on every test run.
 </Callout>

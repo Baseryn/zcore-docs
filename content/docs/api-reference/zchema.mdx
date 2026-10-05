@@ -18,6 +18,7 @@ from zcore import Zchema
 
 class Zchema(BaseModel):
     __model__: ClassVar[Optional[str]] = None
+    __private__: ClassVar[set[str] | list[str] | None] = None
 ```
 
 ---
@@ -30,6 +31,11 @@ class Zchema(BaseModel):
       type: 'ClassVar[Optional[str]]',
       default: 'None',
       description: 'The database table or domain name this schema represents (e.g., "tasks"). Used to match and extract relative paths from ctx.restricted_fields.',
+    },
+    __private__: {
+      type: 'ClassVar[set[str] | list[str] | None]',
+      default: 'None',
+      description: 'Set or list of sensitive field names automatically pruned from responses, input payloads, and OpenAPI schemas for unauthenticated requests (ctx.user_id is None).',
     }
   }}
 />
@@ -39,6 +45,8 @@ class Zchema(BaseModel):
 ## How Context Shielding Works
 
 `Zchema` automatically interacts with the global `ctx` object. When a user authenticates, their restricted field paths (e.g., `"tasks.view.salary"` or `"tasks.create.is_admin"`) are loaded into `ctx.restricted_fields`.
+
+For unauthenticated public visitors (`ctx.user_id is None`), any attributes listed in `__private__` are automatically merged into the active restriction set.
 
 <Callout type="info" emoji="🛡️">
   **Triple Pruning Pipeline:**
@@ -59,7 +67,7 @@ These methods are implemented internally by `Zchema` and require no manual invoc
 
 ### `secure_serializer`
 
-`@model_serializer(mode="wrap")` — Wraps the serialization process. It invokes the default serializer, then executes recursive pruning on the resulting dictionary before rendering to JSON.
+`@model_serializer(mode="wrap")` — Wraps the serialization process. It invokes the default serializer, then executes recursive pruning on the resulting dictionary before rendering to JSON. Early-exit guards bypass recursive traversals when no restrictions exist.
 
 ### `__get_pydantic_json_schema__`
 
@@ -67,8 +75,8 @@ Customizes dynamic JSON Schema generation. It prunes restricted properties and c
 
 ### `_get_relative_restricted_paths`
 
-`@classmethod` — Extracts and normalizes restricted field paths mapped to this schema's domain (`__model__`). It evaluates action-specific rules (`tasks.view.salary`), global rules (`tasks.salary`), and wildcard model masks (`tasks.view` $\rightarrow$ `*`).
+`@classmethod` — Extracts and normalizes restricted field paths mapped to this schema's domain (`__model__`). It evaluates unauthenticated guest attributes (`__private__`), action-specific rules (`tasks.view.salary`), global rules (`tasks.salary`), and wildcard model masks (`tasks.view` $\rightarrow$ `*`).
 
 ### `_prune_data`
 
-`@classmethod` — Recursively traverses nested dictionaries and lists of dictionaries to strip attributes matching relative restriction dot-paths.
+`@classmethod` — Recursively traverses nested dictionaries and lists of dictionaries to strip attributes matching relative restriction dot-paths with early-termination optimization.
