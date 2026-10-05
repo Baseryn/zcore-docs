@@ -76,7 +76,7 @@ class TaskService(BaseService[Task]):
         return {"slug": slugify(schema.title)}
 
     # Or override the entire core method when absolute control is needed
-    async def create(self, schema: BaseModel, **extra_data: Any) -> Task:
+    async def on_create(self, schema: BaseModel, **extra_data: Any) -> Task:
         task = await self.repository.create(schema, **extra_data)
         await external_cache.set(f"task:{task.id}", task)
         return task
