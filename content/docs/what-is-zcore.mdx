@@ -143,12 +143,11 @@ async def get_task(id: int, db: AsyncSession = Depends(get_db)):
 
 ```python
 import uuid
-from zcore.kernel import background_task
-from zcore import Inject
+from zcore import background_task
 
 @background_task
-async def send_invoice(order_id: uuid.UUID, service: Inject[InvoiceService]):
-    # Executes with an isolated AsyncSession and IoC scope
+async def send_invoice(order_id: uuid.UUID, service: InvoiceService):
+    # Automatically resolved from IoC container with an isolated AsyncSession!
     await service.process(order_id)
 ```
 *Safe background execution without closed session leaks.*
@@ -226,5 +225,8 @@ You control the pace of adoption. Moving rightward along the spectrum is entirel
   </Card>
   <Card title="UnitOfWork" href="/docs/api-reference/uow">
     Atomic transactions and post-commit deferred event dispatching.
+  </Card>
+  <Card title="Exception Handlers" href="/docs/api-reference/exceptions">
+    Unified error normalization, Pydantic trace sanitization, and debug-gated diagnostics.
   </Card>
 </Cards>

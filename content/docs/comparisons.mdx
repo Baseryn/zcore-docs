@@ -32,7 +32,8 @@ ZCore does not replace FastAPI; it runs alongside it to address common boilerpla
 | **Transactional Boundaries** | Manual `session.commit()` execution | Context-manager encapsulation via `UnitOfWork` (post-commit events) |
 | **Background Routines** | Manual session management (risks closed session errors) | `@background_task` / `background_scope` with auto-wired DI, session leak warnings, and fresh sessions |
 | **Soft Delete** | Manual query filtering per route | Built-in `SoftDeleteMixin` with timezone-aware timestamps, automatic `scope_query`, atomic batch restore, and `?force=true` query support |
-| **Structured Logging** | Manual configuration | Multi-tier `setup_logging` with `LoggingSettings`, rotating file logs, and query timing |
+| **Error Normalization** | Inconsistent error schemas (raw 422 arrays, HTML 500s) | Unified `ResponseWrapper[None]` with Pydantic dot-path sanitization and debug-gated 500 tracebacks via `register_exception_handlers` |
+| **Structured Logging** | Manual configuration | Non-intrusive logging with tri-split loggers (`muted`, `passthrough`, `intercept`), status-aware exception levels (<500 DEBUG), and slow-query tracking |
 | **Module Organization** | Undefined (User-driven) | Structured, topologically sorted domain modules (`Plugin`) |
 | **CLI & Scaffolding** | Manual file setup | Interactive TUI (`zc`) with cascading config hierarchy (`CLI > .env > defaults`), transparent Uvicorn passthrough, and multi-DB driver support |
 
@@ -107,9 +108,9 @@ These frameworks solve fundamentally different architectural problems. Django is
 | Feature | FastAPI-Users | ZCore (`BaseAuth`) |
 |---|---|---|
 | **Primary Focus** | Complete out-of-the-box user registration and management | Contextual authentication and scope-based security binding |
-| **Auth Flows** | Registration, verification, password reset, OAuth logins | JWT decoding, Argon2id hashing, and signature validation |
+| **Auth Flows** | Registration, verification, password reset, OAuth logins | JWT decoding, Argon2id hashing, and optional authentication (`auto_error=False`) |
 | **Password Hashing** | Typically Bcrypt | Argon2id (Default, high-entropy PHC winner) |
-| **User Schema & Model** | Enforced user and database schema templates | Bring Your Own User Model (BYOUM) matching `UserProtocol` |
+| **User Schema & Model** | Enforced user and database schema templates | Bring Your Own User Model (BYOUM) matching `UserProtocol` (supports arbitrary ID types: int, str, UUID) |
 | **Database Coupling** | Tightly coupled to database adapters (SQLAlchemy/Beanie) | Completely decoupled; relies on standard repository interfaces |
 | **Scope of Utilities** | Authentication only | Full architectural stack (Repository, Service, Zchema, UoW, CLI) |
 
