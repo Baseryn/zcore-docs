@@ -35,7 +35,7 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
   <Step>
     ### Example Search Payload
 
-    Send a `POST` request to `/tasks/search`:
+    Send a `POST` request to `/tasks/search`. You can paginate using traditional offset parameters (`page`) or pass a Keyset token (`cursor`) for drift-free lookups on large datasets:
 
     ```json
     POST /tasks/search
@@ -70,6 +70,7 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
         { "field": "created_at", "order": "desc" }
       ],
       "page": 1,
+      "cursor": null,
       "size": 20
     }
     ```
@@ -82,6 +83,7 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
 
     1. **Search Depth Limit:** Resolved first from the model attribute `__max_search_depth__`, falling back to `settings.SEARCH_MAX_DEPTH` (default: **3**).
     2. **Pagination Bounds:** The `size` parameter in `SearchRequest` is automatically bounded between `1` and `settings.PAGINATION_MAX_SIZE` (default: **100**), with a fallback to `settings.PAGINATION_DEFAULT_SIZE` (default: **20**).
+    3. **Keyset Cursor Support:** When `cursor` is provided, `SearchEngine` executes keyset comparisons against the model primary key, bypassing table offset scans.
 
     To allow deeper relation eager-loading or deeply nested filter structures on a specific model:
 

@@ -33,7 +33,34 @@ Instead of maintaining separate Pydantic models for public, user, and admin view
   </Step>
 
   <Step>
-    ### 2. Set Restrictions in Context
+    ### 2. Guest-Level Masking with `__private__`
+
+    If certain fields must never be exposed to unauthenticated public visitors (guests), declare them directly in the `__private__` class variable:
+
+    ```python
+    # schemas.py
+    import uuid
+    from zcore import Zchema
+    from pydantic import ConfigDict
+
+    class TaskResponse(Zchema):
+        __model__ = "tasks"
+        __private__ = {"internal_notes", "cost_price"}  # Stripped for unauthenticated visitors
+
+        id: uuid.UUID
+        title: str
+        salary: float
+        cost_price: float = 0.0
+        internal_notes: str | None = None
+
+        model_config = ConfigDict(from_attributes=True)
+    ```
+
+    When an unauthenticated request hits the endpoint (`ctx.user_id is None`), ZCore automatically purges these fields from response serialization, input validation, and dynamic OpenAPI schema generation without requiring active context lookups.
+  </Step>
+
+  <Step>
+    ### 3. Set Restrictions in Context
 
     During your authentication flow (or inside `BaseAuth`), load the active user's restricted paths into `ctx.restricted_fields`:
 
@@ -46,7 +73,7 @@ Instead of maintaining separate Pydantic models for public, user, and admin view
   </Step>
 
   <Step>
-    ### 3. Automatic Response Pruning
+    ### 4. Automatic Response Pruning
 
     When your endpoint returns a `TaskResponse` model or dictionary, `Zchema` intercepts serialization and removes restricted keys:
 

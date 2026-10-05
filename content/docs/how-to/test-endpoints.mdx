@@ -11,7 +11,23 @@ Testing layered architectures often requires mocking database connections, overr
 
 <Steps>
   <Step>
-    ### 1. Basic Endpoint Test with Database Rollback
+    ### 1. Initializing Test Database Schemas
+
+    Before executing your test suite, use `setup_test_database` in your `conftest.py` to ensure test tables are created cleanly across synchronous or asynchronous test runners:
+
+    ```python
+    # conftest.py
+    import pytest
+    from zcore.testing import setup_test_database
+
+    @pytest.fixture(scope="session", autouse=True)
+    def initialize_test_db():
+        setup_test_database(drop_first=True)
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Basic Endpoint Test with Database Rollback
 
     By default (`use_db=True`), any database mutations performed during the test are rolled back on exit:
 
@@ -39,7 +55,7 @@ Testing layered architectures often requires mocking database connections, overr
   </Step>
 
   <Step>
-    ### 2. Testing Authenticated Routes & Permissions
+    ### 3. Testing Authenticated Routes & Permissions
 
     Pass `user_id`, `scopes`, and `is_superuser` to simulate authenticated requests without generating real JWT tokens:
 
@@ -64,7 +80,7 @@ Testing layered architectures often requires mocking database connections, overr
   </Step>
 
   <Step>
-    ### 3. Class-Based Testing with `BaseZTest`
+    ### 4. Class-Based Testing with `BaseZTest`
 
     For test suites sharing identical user attributes and configuration, inherit from `BaseZTest`:
 
@@ -90,5 +106,6 @@ Testing layered architectures often requires mocking database connections, overr
   **Behind the Scenes Orchestration:**
   * **Database Savepoints:** Connects to the engine, opens a transaction with `create_savepoint`, and binds it to `db_manager.session`. It rolls back instantly on exit without dropping or truncating tables.
   * **IoC Container Sandboxing:** Backs up singletons, scoped instances, and factories before each test, completely preventing test pollution.
+  * **Event Dispatcher Sandboxing:** Automatically snapshots and restores registered event subscribers so test-specific event listeners never leak across test cases.
   * **Application Lifespan:** Automatically executes plugin `before_startup`, `on_startup`, and `on_shutdown` hooks.
 </Callout>

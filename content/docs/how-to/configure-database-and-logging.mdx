@@ -92,6 +92,8 @@ ZCore provides structured configuration schemas for the database engine (`Databa
     ```dotenv
     # .env
     LOG_LEVEL=INFO
+    LOG_SQL_QUERIES=False              # Flat setting for query logging
+    SLOW_QUERY_THRESHOLD_MS=200.0      # Independently track slow queries
     ```
 
     Initialize logging at the beginning of `main.py`:
@@ -107,7 +109,7 @@ ZCore provides structured configuration schemas for the database engine (`Databa
   <Step>
     ### Option B: Declarative `LoggingSettings`
 
-    Configure file rotation boundaries (`max_bytes`, `backup_count`), slow SQL query thresholds, and muted loggers in your `Settings` subclass:
+    Configure file rotation boundaries (`max_bytes`, `backup_count`), slow SQL query thresholds, and distinct logger behaviors (`muted`, `passthrough`, `intercept`) in your `Settings` subclass:
 
     ```python
     # config.py
@@ -117,16 +119,13 @@ ZCore provides structured configuration schemas for the database engine (`Databa
         LOGGING: LoggingSettings = LoggingSettings(
             level="INFO",
             json_format=None,              # None: Console in Debug, JSON in Production
-            log_sql_queries=True,          # Log executed SQL queries
-            slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms
+            log_sql_queries=False,         # Disabled by default in rc.2 to avoid noise
+            slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms (works independently!)
             file_path="./logs/app.log",    # Enables RotatingFileHandler
             max_bytes=20 * 1024 * 1024,    # Rotate when file reaches 20MB (default: 10MB)
             backup_count=10,               # Retain 10 rotated log backups (default: 5)
-            muted_loggers=[
-                "uvicorn",
-                "uvicorn.access",
-                "sqlalchemy.engine"
-            ]
+            muted_loggers=["sqlalchemy.engine"],
+            passthrough_loggers=["uvicorn", "uvicorn.access", "uvicorn.error"]
         )
     ```
   </Step>
@@ -170,5 +169,5 @@ ZCore provides structured configuration schemas for the database engine (`Databa
 
 <Callout type="info" emoji="⚡">
   **SQL Query Logging:**
-  When `log_sql_queries` is enabled, executed statements are formatted with duration metrics (`duration_ms`). If `slow_query_threshold_ms` is set, fast queries are filtered out to reduce log noise.
+  When `log_sql_queries` is enabled, executed statements are formatted with duration metrics (`duration_ms`). If `slow_query_threshold_ms` is set, queries exceeding this limit are tracked and logged independently, even if general query logging is turned off.
 </Callout>

@@ -48,7 +48,18 @@ When multiple services or repositories must modify the database within a single 
   </Step>
 
   <Step>
-    ### 2. Post-Commit Domain Events
+    ### 2. Nested & Re-entrant Transactions
+
+    In modular applications, domain services frequently invoke one another (e.g. `CheckoutService` calling an `InventoryService`). Each service can safely wrap its persistence operations within `async with UnitOfWork(...)`:
+
+    * **Inner Scopes (`depth > 1`):** Calls to `uow.commit()` safely execute `session.flush()` to populate database IDs and apply constraints without committing the physical transaction.
+    * **Root Scope (`depth == 0`):** The outermost context manager boundary executes the final physical database commit.
+    * **Deferred Events Buffer:** Events registered across all nested levels (`session.info['uow_events']`) are accumulated in the shared session buffer and dispatched together **only after the root transaction commits**.
+    * **Chain Rollback:** An unhandled error at any depth immediately resets `uow_depth`, cancels all pending events, and rolls back the entire transaction chain.
+  </Step>
+
+  <Step>
+    ### 3. Post-Commit Domain Events
 
     `UnitOfWork.register_event(event_name, payload)` prevents side-effects on transaction failures:
     * Events are queued in an internal buffer.

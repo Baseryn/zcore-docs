@@ -70,7 +70,7 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
         }
       ],
       "meta": {
-        "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTA4LTE1VDA4OjAwOjAwIiwgImlkIjogImExYjJjM2Q0Li4uIn0",
+        "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTA4LTE1VDA4OjAwOjAwIiwgInBrIjogImExYjJjM2Q0Li4uIn0",
         "has_more": true,
         "size": 20
       }
@@ -80,6 +80,6 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
 </Steps>
 
 <Callout type="info" emoji="⚡">
-  **Under the Hood (Keyset Sorting):**
-  ZCore encodes cursor positions into URL-safe Base64 tokens containing both the coordinate value and the record's primary key (`id`). This allows the database to execute fast `WHERE col < val` indexed lookups rather than scanning thousands of rows via `OFFSET`.
+  **Dynamic Primary Key Inspection:**
+  As of `rc.2`, `CursorPagination()` automatically inspects your model's primary key column (supporting both `uuid.UUID` and `int` primary keys). The cursor token encapsulates `{"value": ..., "pk": ...}` into a URL-safe Base64 token to execute fast indexed lookups (`WHERE col < val`) without scanning rows via `OFFSET`.
 </Callout>
