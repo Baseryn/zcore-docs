@@ -12,7 +12,7 @@ Exposing arbitrary database filtering to frontend clients is traditionally dange
 
 ## 1. The Compilation Pipeline
 
-When a `SearchRequest` payload is received (typically via `POST /search`), the `SearchEngine` coordinates execution across three distinct phases:
+When a `SearchRequest` payload is received (typically via `POST /search` or `POST /lookup`), the `SearchEngine` coordinates execution across three distinct phases:
 
 <Mermaid chart="graph TB
     Req[SearchRequest JSON] --> Val[1. Security & Depth Validation]
@@ -20,12 +20,39 @@ When a `SearchRequest` payload is received (typically via `POST /search`), the `
     Exp --> Exec[3. SQLAlchemy Execution & Pagination]"/>
 
 1. **Validation & Security Assertion:** Inspects all requested field paths, sort columns, and inclusion routes against `ctx.restricted_fields` and schema mappers.
-2. **Expression Building & Type Coercion:** Recursively translates structured JSON operators (`eq`, `ne`, `gt`, `lt`, `ge`, `le`, `ilike`, `contains`, `startswith`, `endswith`, `in`, `between`, `is_null`, `and`, `or`) into SQLAlchemy binary comparison clauses while safely coercing values (`int`, `float`, `date`, `datetime`, `UUID`, `bool`, and `set`).
-3. **Execution & Eager-Loading:** Injects relation loaders (`joinedload` / `selectinload`), applies sorting, and passes the query to the repository paginator.
+2. **Expression Building & Type Coercion:** Recursively translates structured JSON comparison operators (`eq`, `ne`, `gt`, `lt`, `ge`, `le`, `like`, `ilike`, `contains`, `startswith`, `endswith`, `in`, `between`, `is_null`), inverted operators (`not_like`, `not_ilike`, `not_contains`, `not_startswith`, `not_endswith`, `not_in`, `not_between`, `is_not_null`), and logical grouping blocks (`and`, `or`, `not`) into SQLAlchemy comparison clauses while safely coercing input types (`int`, `float`, `date`, `datetime`, `UUID`, `bool`, and `set`).
+3. **Execution & Eager-Loading:** Injects relation loaders (`joinedload` / `selectinload`), applies column projection (`fields` via `load_only`), custom SQLAlchemy options (`options`), sorting rules, and passes the query to the repository paginator.
 
 ---
 
-## 2. Security: Column & Relation Level Access Control
+## 2. Supported Filter Operators & Logical Negation
+
+The compiler supports a comprehensive catalog of relational, pattern-matching, range, and boolean operators:
+
+| Operator Category | Operators | AST Transformation / Behavior |
+|---|---|---|
+| **Equality & Comparison** | `eq`, `ne`, `gt`, `lt`, `ge`, `le` | Standard binary SQL comparisons (`=`, `!=`, `>`, `<`, `>=`, `<=`) with auto-coercion. |
+| **Pattern Matching** | `like`, `ilike`, `contains`, `startswith`, `endswith` | Escapes wildcards (`%`, `_`) and compiles to `.like()` or `.ilike()`. |
+| **Inverted Matching** | `not_like`, `not_ilike`, `not_contains`, `not_startswith`, `not_endswith` | Wraps escaped pattern-matching expressions inside `not_()`. |
+| **Range & Lists** | `between`, `not_between`, `in`, `not_in` | Coerces lists of values and compiles to `.between()` / `not_(.between())` or `.in_()` / `not_(.in_())`. |
+| **Nullability** | `is_null`, `is_not_null` | Compiles to `col.is_(None)` or `col.isnot(None)` (accepts `true` or `null`). |
+| **Logical Grouping** | `and`, `or` | Evaluates sub-filters in `items` recursively and wraps in `and_(*sub_exprs)` or `or_(*sub_exprs)`. |
+| **Logical Negation** | `not` | Negates a single field (`not_(col == val)`) or negates an entire sub-block (`not_(and_(*sub_exprs))`). |
+
+```python
+# Example: Nested logical NOT compilation in search.py
+if f.op == "not":
+    if f.items:
+        sub_exprs = [self._get_operator_expression(item) for item in f.items if item is not None]
+        return not_(and_(*sub_exprs)) if sub_exprs else None
+    elif f.field:
+        expr = self._build_expression_for_field(self.model, f.field, "eq", f.value)
+        return not_(expr) if expr is not None else None
+```
+
+---
+
+## 3. Security: Column & Relation Level Access Control
 
 The defining security feature of `SearchEngine` is its seamless integration with **`ZContext`**.
 
@@ -47,18 +74,39 @@ if self._is_path_restricted(current_path, restricted):
 
 ---
 
-## 3. Security: Denial of Service (DoS) Defense
+## 4. Security: Denial of Service (DoS) Defense & Bounds
 
 Malicious clients can craft massive, deeply nested `AND`/`OR` trees or infinite recursive relation joins to exhaust server memory and CPU cycles.
 
-ZCore enforces hard boundaries during the validation sweep:
+ZCore enforces strict, hierarchical boundaries during the validation sweep:
 
-* **Filter Nesting Depth:** Recursive filter structures are limited to a default maximum depth of **3 levels** (configurable per model via `__max_search_depth__`). Exceeding this raises a `ValidationError("Search query filter structure is too complex.")`.
-* **Relation Include Depth:** The `include` array is strictly bounded to the maximum depth limit (e.g., `["organization.owner.profile"]`).
+* **Search Depth Hierarchy:** Filter nesting and relation eager-loading depth (`include`) are resolved hierarchically:
+  > **model.__max_search_depth__** $\longrightarrow$ **settings.SEARCH_MAX_DEPTH** $\longrightarrow$ **Default (3)**
+  
+  Exceeding this threshold raises a `ValidationError("Search query filter structure is too complex.")`.
+* **Automatic Page Size Clamping:** The `size` parameter in `SearchRequest` is validated via Pydantic V2 `model_validator(mode="after")`. If omitted, it defaults to `settings.PAGINATION_DEFAULT_SIZE` (default: 20). If specified, it is strictly clamped between `1` and `settings.PAGINATION_MAX_SIZE` (default: 100), preventing massive unbounded database dumps.
 
 ---
 
-## 4. Intelligent Eager-Loading Optimization
+## 5. Selective Projection & Custom Options (`fields` & `options`)
+
+In addition to dynamic compilation, the `search()` method in both `BaseRepository` and `BaseService` accepts explicit column projection and SQLAlchemy options:
+
+```python
+# Selective loading and custom SQLAlchemy options
+results = await task_repo.search(
+    search_request,
+    fields=[Task.id, Task.title],           # Applies load_only(*fields)
+    options=[selectinload(Task.assignee)],   # Applies custom executable options
+    pagination=CursorParams(size=20)
+)
+```
+
+This ensures that endpoints like `/lookup` can load only minimal columns while executing dynamic search and relation joins safely.
+
+---
+
+## 6. Intelligent Eager-Loading Optimization
 
 The `include` parameter allows clients to request relational graphs dynamically without triggering N+1 database queries. The engine inspects SQLAlchemy model mappers to choose the optimal loader strategy:
 
@@ -67,7 +115,7 @@ The `include` parameter allows clients to request relational graphs dynamically 
 
 ---
 
-## 5. Relational Dot-Path Resolution & Type Safety
+## 7. Relational Dot-Path Resolution & Type Safety
 
 When filtering across foreign relations (e.g., `{ "field": "author.email", "op": "eq", "value": "test@core.com" }`), the engine resolves the target model dynamically:
 
@@ -76,6 +124,6 @@ When filtering across foreign relations (e.g., `{ "field": "author.email", "op":
 
 <Callout type="info" emoji="⚡">
   **Wildcard Sanitization & Automatic Type Casting:**
-  * All text operators (`ilike`, `contains`, `startswith`, `endswith`) automatically escape SQL wildcard characters (`%`, `_`, `\`) to prevent query distortion or wildcard injection attacks.
+  * All text operators (`ilike`, `contains`, `startswith`, `endswith` and their `not_*` counterparts) automatically escape SQL wildcard characters (`%`, `_`, `\`) to prevent query distortion or wildcard injection attacks.
   * When applying text-matching operators to non-string columns (e.g., searching numeric IDs or UUIDs), the engine automatically applies `cast(col, String)` to guarantee safe and valid SQL execution.
 </Callout>

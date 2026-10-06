@@ -18,8 +18,7 @@ In standard FastAPI applications, running background tasks that access database 
     ```python
     # tasks/tasks.py
     import uuid
-    from zcore.kernel import background_task
-    from zcore import Inject
+    from zcore import background_task
     from .services import TaskService
 
     @background_task
@@ -81,6 +80,12 @@ In standard FastAPI applications, running background tasks that access database 
 </Steps>
 
 <Callout type="warn" emoji="🔒">
-  **Context Inheritance:**
-  By default, `inherit_context=True` clones the active user context (`user_id`, `scopes`, etc.) into the background task, allowing role-based operations and audit trails to persist even after the HTTP connection has closed.
+  **Context Inheritance & Session Safety:**
+  * By default, `inherit_context=True` clones the active user context (`user_id`, `scopes`, etc.) into the background task, allowing role-based operations and audit trails to persist even after the HTTP connection has closed.
+  * Do not pass active HTTP request sessions (`AsyncSession`) as arguments to background tasks. `@background_task` automatically detects this and logs a warning, encouraging you to let the decorator provision a dedicated, isolated session safely.
+</Callout>
+
+<Callout type="info" emoji="🪵">
+  **Structured Log Correlation (`task_id`):**
+  Every execution wrapped with `@background_task` or `background_scope` automatically generates and binds an isolated `task_id` UUID to `structlog` contextvars. This allows you to filter and trace all log events originating from a specific background job execution cleanly.
 </Callout>

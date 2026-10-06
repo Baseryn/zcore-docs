@@ -27,13 +27,29 @@ If any exception is raised inside the `async with` block, `UnitOfWork` catches t
     Start[async with UnitOfWork] --> Flag[Set session uow_managed = True]
     Flag --> Repos[Execute Multiple Repository Mutations]
     Repos --> Buffer[uow.register_event Buffered in Memory]
-    Buffer --> Commit{DB Commit Succeeds?}
+    Buffer --> Depth{Outermost Root Scope?}
+    Depth -- No: depth > 1 --> Flush[session.flush: Sync DB Constraints]
+    Depth -- Yes: depth == 0 --> Commit{Physical DB Commit Succeeds?}
     Commit -- Yes --> Dispatch[Dispatch Pending Events Concurrently]
     Commit -- No / Exception --> Rollback[session.rollback & Purge Events]"/>
 
 ---
 
-## 2. Deferred Event Dispatching (Solving the Dual-Write Problem)
+## 2. Nested & Re-entrant Coordination (Depth Tracking)
+
+In modular monolithic architectures, domain services frequently invoke each other (e.g., `OrderService` calling `InventoryService` and `BillingService`). If each service declares its own `UnitOfWork` boundary, a naive implementation would prematurely commit when the inner service finishes.
+
+ZCore solves this with **Depth-Aware Re-entrancy**:
+
+1. **Depth Counter (`uow_depth`):** `UnitOfWork.__aenter__` increments `session.info["uow_depth"]`.
+2. **Nested Flushes:** When an inner scope (`depth > 1`) exits, `uow.commit()` executes `await session.flush()` instead of a physical commit. This assigns database-generated IDs, validates foreign key constraints, and synchronizes session state without ending the physical database transaction.
+3. **Shared Event Buffer (`uow_events`):** Domain events registered at any nesting depth are buffered in a shared list at `session.info["uow_events"]`.
+4. **Root Commit & Atomic Dispatch:** Only when the outermost context manager (`depth == 0`) concludes does ZCore execute the physical database commit and dispatch all accumulated domain events concurrently via `EventDispatcher`.
+5. **Chain Rollback:** If an exception is raised at *any* depth, the active depth resets to `0`, `uow_managed` is cleared, all pending events are discarded, and the entire multi-service transaction is rolled back immediately.
+
+---
+
+## 3. Deferred Event Dispatching (Solving the Dual-Write Problem)
 
 Standard event dispatchers trigger listener callbacks immediately when `dispatch()` is called. In transactional systems, this creates severe consistency bugs:
 
@@ -47,7 +63,7 @@ Standard event dispatchers trigger listener callbacks immediately when `dispatch
 </Callout>
 
 ### The ZCore Solution
-Inside a `UnitOfWork`, calling `uow.register_event("order.completed", payload)` does **not** execute listeners immediately. Instead, it buffers the event tuple in an internal `_pending_events` list:
+Inside a `UnitOfWork`, calling `uow.register_event("order.completed", payload)` does **not** execute listeners immediately. Instead, it buffers the event tuple in the session's pending events store:
 
 ```python
 async with UnitOfWork(self.repository.db, self.dispatcher) as uow:
@@ -57,7 +73,7 @@ async with UnitOfWork(self.repository.db, self.dispatcher) as uow:
     # Buffered safely: Not dispatched yet!
     uow.register_event("order.completed", {"order_id": str(order.id)})
     
-# Dispatches ONLY after the database commit succeeds on context exit!
+# Dispatches ONLY after the physical database commit succeeds on root exit!
 ```
 
 Only **after** `await self.session.commit()` completes successfully does the UoW pop each event from `_pending_events` and invoke `self.dispatcher.dispatch(...)`. If the commit fails, all buffered events are permanently discarded.
@@ -66,9 +82,9 @@ This provides absolute transactional consistency: **If a domain event fires, the
 
 ---
 
-## 3. Integration with `BaseRepository`
+## 4. Integration with `BaseRepository`
 
-Because all repository instances resolve the active, request-scoped `AsyncSession` managed by `ScopedDependencyMiddleware`, they automatically participate in the `UnitOfWork` lifecycle without any custom configuration. You can orchestrate updates across 5 different domain repositories within a single atomic UoW block.
+Because all repository instances resolve the active, request-scoped `AsyncSession` managed by `ScopedDependencyMiddleware`, they automatically participate in the `UnitOfWork` lifecycle without any custom configuration. You can orchestrate updates across multiple independent domain repositories within a single atomic UoW block.
 
 <Callout type="info" emoji="🔒">
   **Handler Failure Isolation:**

@@ -1,21 +1,23 @@
 ---
 title: BaseRepository
-description: Comprehensive API reference for the BaseRepository class, query scoping, bulk operations, and SoftDelete integration.
+description: Comprehensive API reference for the BaseRepository class, query scoping, bulk operations, soft-delete lifecycles, and restoration methods.
 icon: Database
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRepository` provides standard asynchronous database access, combining Read, Write, Bulk Mutation, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions and enforces context security through model-level query scoping.
+`BaseRepository` provides standard asynchronous database access, combining Read, Write, Bulk Mutation, Soft-Delete Restoration, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions and enforces context security through model-level query scoping.
 
 ## Class Definition
 
 ```python
-from typing import Type, Generic
+from typing import Generic, TypeVar
 from sqlalchemy.ext.asyncio import AsyncSession
 from zcore import BaseRepository
-from zcore.db.setup import ModelType
+from zcore.db.setup import Base
+
+ModelType = TypeVar("ModelType", bound=Base)
 
 class BaseRepository(
     Generic[ModelType],
@@ -23,7 +25,7 @@ class BaseRepository(
     WriteRepositoryMixin[ModelType],
     SearchRepositoryMixin[ModelType]
 ):
-    def __init__(self, model: Type[ModelType], db: AsyncSession):
+    def __init__(self, model: type[ModelType], db: AsyncSession):
         ...
 ```
 
@@ -38,7 +40,7 @@ class BaseRepository(
       description: 'The active asynchronous database session.',
     },
     model: {
-      type: 'Type[ModelType]',
+      type: 'type[ModelType]',
       description: 'The SQLAlchemy declarative model class bound to the repository.',
     },
     pk: {
@@ -73,6 +75,10 @@ def _get_base_query(self) -> Select:
     if scoper:
         return scoper(query)
     return query
+
+def _supports_soft_delete(self) -> bool:
+    """Determine whether the underlying model implements SoftDeleteMixin."""
+    return hasattr(self.model, "deleted_at") and hasattr(self.model, "soft_delete")
 ```
 
 <Callout type="info" emoji="💡">
@@ -98,10 +104,10 @@ Fetches a single model instance matching dynamic criteria.
 async def get(
     self, 
     *criterion: Any, 
-    fields: Optional[List[Any]] = None, 
-    options: Optional[List[ExecutableOption]] = None,
+    fields: list[Any] | None = None, 
+    options: list[ExecutableOption] | None = None,
     **filters: Any
-) -> Optional[ModelType]: ...
+) -> ModelType | None: ...
 ```
 
 <TypeTable
@@ -111,12 +117,12 @@ async def get(
       description: 'Positional binary SQLAlchemy filter expressions (e.g., Task.status == "active").',
     },
     fields: {
-      type: 'List[Any] | None',
+      type: 'list[Any] | None',
       default: 'None',
       description: 'Specific entity attributes to selectively load (load_only).',
     },
     options: {
-      type: 'List[ExecutableOption] | None',
+      type: 'list[ExecutableOption] | None',
       default: 'None',
       description: 'SQLAlchemy execution/loader options (e.g., joinedload, selectinload).',
     },
@@ -138,25 +144,25 @@ Fetches a sequence of records matching a list of primary keys in a single query.
 ```python
 async def get_by_ids(
     self, 
-    ids: List[Any], 
-    fields: Optional[List[Any]] = None, 
-    options: Optional[List[ExecutableOption]] = None
+    ids: list[Any], 
+    fields: list[Any] | None = None, 
+    options: list[ExecutableOption] | None = None
 ) -> Sequence[ModelType]: ...
 ```
 
 <TypeTable
   type={{
     ids: {
-      type: 'List[Any]',
+      type: 'list[Any]',
       description: 'A list of primary key values to retrieve.',
     },
     fields: {
-      type: 'List[Any] | None',
+      type: 'list[Any] | None',
       default: 'None',
       description: 'Specific entity attributes to selectively load.',
     },
     options: {
-      type: 'List[ExecutableOption] | None',
+      type: 'list[ExecutableOption] | None',
       default: 'None',
       description: 'SQLAlchemy execution options.',
     },
@@ -176,8 +182,8 @@ async def get_list(
     self, 
     *criterion: Any,
     pagination: Any = None, 
-    fields: Optional[List[Any]] = None, 
-    options: Optional[List[ExecutableOption]] = None,
+    fields: list[Any] | None = None, 
+    options: list[ExecutableOption] | None = None,
     **filters: Any
 ) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
 ```
@@ -194,12 +200,12 @@ async def get_list(
       description: 'Pagination parameter schema. If None, returns all unpaginated records.',
     },
     fields: {
-      type: 'List[Any] | None',
+      type: 'list[Any] | None',
       default: 'None',
       description: 'Specific entity attributes to selectively load.',
     },
     options: {
-      type: 'List[ExecutableOption] | None',
+      type: 'list[ExecutableOption] | None',
       default: 'None',
       description: 'SQLAlchemy execution loader options.',
     },
@@ -266,7 +272,7 @@ async def count(self, *criterion: Any, **filters: Any) -> int: ...
 
 ---
 
-## Write & Bulk Mutation Methods
+## Write, Bulk Mutation & Restoration Methods
 
 ### `create`
 
@@ -300,7 +306,7 @@ Creates multiple database records with dialect-aware fallback for returning supp
 ```python
 async def create_multi(
     self, 
-    schemas: List[BaseModel], 
+    schemas: list[BaseModel], 
     refresh: bool = False
 ) -> Sequence[ModelType]: ...
 ```
@@ -308,7 +314,7 @@ async def create_multi(
 <TypeTable
   type={{
     schemas: {
-      type: 'List[BaseModel]',
+      type: 'list[BaseModel]',
       description: 'A list of Pydantic schemas representing the new database objects.',
     },
     refresh: {
@@ -334,7 +340,7 @@ async def update(
     schema: BaseModel, 
     partial: bool = False, 
     **extra_data: Any
-) -> Optional[ModelType]: ...
+) -> ModelType | None: ...
 ```
 
 <TypeTable
@@ -401,10 +407,10 @@ async def update_multi(
 
 ### `delete`
 
-Deletes a single record by its model instance or primary key identifier.
+Deletes a single record by its model instance or primary key identifier. Automatically applies soft-deletion if supported by the model unless `force=True`.
 
 ```python
-async def delete(self, target: ModelType | Any) -> Optional[ModelType]: ...
+async def delete(self, target: ModelType | Any, force: bool = False) -> ModelType | None: ...
 ```
 
 <TypeTable
@@ -413,30 +419,82 @@ async def delete(self, target: ModelType | Any) -> Optional[ModelType]: ...
       type: 'ModelType | Any',
       description: 'The model instance or primary key value of the target record to delete.',
     },
+    force: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, executes a permanent physical hard deletion even if SoftDeleteMixin is present.',
+    },
     returns: {
       type: 'ModelType | None',
-      description: 'The deleted database model instance, or None if not found.',
+      description: 'The deleted or soft-deleted database model instance, or None if not found.',
     }
   }}
 />
 
 ### `delete_multi`
 
-Delete multiple records matching the provided list of primary keys with dialect-aware fallback.
+Deletes multiple records matching the provided list of primary keys. Automatically executes an atomic soft-delete update (`deleted_at = now()`) unless `force=True`.
 
 ```python
-async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
+async def delete_multi(self, ids: list[Any], force: bool = False) -> Sequence[ModelType]: ...
 ```
 
 <TypeTable
   type={{
     ids: {
-      type: 'List[Any]',
+      type: 'list[Any]',
       description: 'A list of primary key values of records to delete.',
+    },
+    force: {
+      type: 'bool',
+      default: 'False',
+      description: 'If True, executes permanent physical hard deletions.',
     },
     returns: {
       type: 'Sequence[ModelType]',
-      description: 'A sequence containing the deleted database model instances.',
+      description: 'A sequence containing the deleted or soft-deleted database model instances.',
+    }
+  }}
+/>
+
+### `restore`
+
+Restores a previously soft-deleted record by primary key or model instance.
+
+```python
+async def restore(self, target: ModelType | Any) -> ModelType | None: ...
+```
+
+<TypeTable
+  type={{
+    target: {
+      type: 'ModelType | Any',
+      description: 'The model instance or primary key value of the soft-deleted record to restore.',
+    },
+    returns: {
+      type: 'ModelType | None',
+      description: 'The restored database model instance, or None if not found or unsupported.',
+    }
+  }}
+/>
+
+### `restore_multi`
+
+Restores multiple soft-deleted records using an atomic batch `UPDATE ... WHERE deleted_at IS NOT NULL` statement with dialect-aware `RETURNING` optimization.
+
+```python
+async def restore_multi(self, ids: list[Any]) -> Sequence[ModelType]: ...
+```
+
+<TypeTable
+  type={{
+    ids: {
+      type: 'list[Any]',
+      description: 'A list of primary key values of records to restore.',
+    },
+    returns: {
+      type: 'Sequence[ModelType]',
+      description: 'A sequence of restored database model instances.',
     }
   }}
 />
@@ -447,13 +505,15 @@ async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]: ...
 
 ### `search`
 
-Dynamically parses and executes a structured `SearchRequest` with automatic security checks and operator parsing (`between`, `contains`, `startswith`, `endswith`, `ilike`, etc.).
+Dynamically parses and executes a structured `SearchRequest` with automatic security checks, inverted operators, logical negation, column projection, and relation eager-loading.
 
 ```python
 async def search(
     self, 
     search_in: SearchRequest, 
-    pagination: Any = None
+    pagination: Any = None,
+    fields: list[Any] | None = None,
+    options: list[ExecutableOption] | None = None,
 ) -> Sequence[ModelType] | PaginatedResult[ModelType]: ...
 ```
 
@@ -467,6 +527,16 @@ async def search(
       type: 'PageNumberParams | CursorParams | None',
       default: 'None',
       description: 'Pagination settings to apply to search results.',
+    },
+    fields: {
+      type: 'list[Any] | None',
+      default: 'None',
+      description: 'Specific entity attributes to selectively load (load_only).',
+    },
+    options: {
+      type: 'list[ExecutableOption] | None',
+      default: 'None',
+      description: 'Additional SQLAlchemy execution or relation loader options.',
     },
     returns: {
       type: 'Sequence[ModelType] | PaginatedResult[ModelType]',

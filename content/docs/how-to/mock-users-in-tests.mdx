@@ -83,11 +83,36 @@ When writing integration tests, generating, signing, and refreshing JWT tokens i
                 assert "salary" not in task
     ```
   </Step>
+
+  <Step>
+    ### 4. Typed Pydantic User Models & Guest Requests
+
+    Instead of relying on a generic mock object, pass your authentic Pydantic user schema via `user_model`. This ensures endpoint dependencies receive a properly validated model instance:
+
+    ```python
+    from auth import AppUser
+
+    @pytest.mark.asyncio
+    async def test_with_typed_user_model():
+        user_id = uuid.uuid4()
+
+        async with ZTestClient(
+            app=app,
+            user_id=user_id,
+            user_model=AppUser,
+            extra_user_attrs={"department": "Engineering"}
+        ) as client:
+            res = await client.get("/tasks")
+            assert res.status_code == 200
+    ```
+
+    To test public or guest-facing endpoints, simply omit `user_id` (or pass `user_id=None`). This exercises unauthenticated execution paths and validates optional authentication stubs (`get_optional_user_stub`).
+  </Step>
 </Steps>
 
 <Callout type="info" emoji="🎭">
   **Dual Context & Dependency Injection:**
   When `user_id` is supplied, `ZTestClient` simultaneously:
-  1. Overrides `get_current_user_stub` with a `GenericMockUser` implementing `UserProtocol`.
-  2. Binds `user_id`, `scopes`, and `extra_context` to the request-scoped `ZContext` (`ctx`).
+  1. Overrides `get_current_user_stub` and `get_optional_user_stub` (along with any custom `user_dependency` targets) with an authentic Pydantic model (if `user_model` is provided) or a compliant mock object conforming to `UserProtocol`.
+  2. Binds `user_id`, `scopes`, and `extra_context` directly to the request-scoped `ZContext` (`ctx`).
 </Callout>

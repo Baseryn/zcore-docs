@@ -23,11 +23,26 @@ ZCore solves this using `SettingsProxy`.
 
 This guarantees that `settings.DATABASE.url`, `settings.DATABASE_URL`, or `settings.SECRET_KEY` can be safely imported anywhere in your codebase without premature execution.
 
-### Structured Settings Schemas
-Settings in ZCore are structured into dedicated sub-models for core subsystems:
+### Structured Settings Schemas & Subsystems
+Settings in ZCore are structured into dedicated sub-models and framework-wide parameters:
 * **`DATABASE` (`DatabaseSettings`)**: Manages connection URL, pool sizing (`pool_size`, `max_overflow`), connection recycles (`pool_recycle`), health checks (`pool_pre_ping`), and engine parameters (`connect_args`, `execution_options`, `extra_engine_kwargs`).
-* **`LOGGING` (`LoggingSettings`)**: Manages log levels, formatters (`json_format`), SQL query logging (`log_sql_queries`), slow query thresholds (`slow_query_threshold_ms`), rotating log file destinations (`file_path`), and muted loggers (`muted_loggers`).
+* **`LOGGING` (`LoggingSettings`)**: Manages log levels, formatters (`json_format`), SQL query logging (`log_sql_queries`), slow query thresholds (`slow_query_threshold_ms`), rotating file logs (`file_path`), file rotation bounds (`max_bytes`, `backup_count`), and muted loggers (`muted_loggers`).
 * **Timezone Policies**: Global timezone configurations (`TIMEZONE="UTC"`) and automatic ISO serialization conversions (`AUTO_CONVERT_TIMEZONE=True`).
+
+### Framework-Wide Tunable Parameters
+
+ZCore exposes centralized, environment-driven boundaries across all framework subsystems:
+
+| Subsystem | Setting Key | Default | Description |
+|---|---|---|---|
+| **Pagination** | `PAGINATION_DEFAULT_SIZE` | `20` | Fallback page size when omitted in requests. |
+| **Pagination** | `PAGINATION_MAX_SIZE` | `100` | Hard upper bound enforced on page size parameters. |
+| **Search** | `SEARCH_MAX_DEPTH` | `3` | Maximum allowed depth for nested filters and relation eager-loading. |
+| **Authentication** | `AUTH_CACHE_TTL` | `300` (5 min) | Lifespan of cached user sessions in `BaseAuth`. |
+| **Cache** | `CACHE_DEFAULT_TTL` | `3600` (1 hour) | Default fallback TTL for `BaseCache.set()`. |
+| **Cache** | `CACHE_LOCAL_MAXSIZE` | `1000` | Maximum capacity of the local in-memory `TTLLRUCache`. |
+| **Cache** | `CACHE_EVICTION_INTERVAL` | `60` | Duration in seconds between background memory cleanup sweeps. |
+| **Streaming** | `STREAM_QUEUE_MAXSIZE` | `100` | Bounded capacity for user real-time streaming queues in `StreamManager`. |
 
 <Callout type="info" emoji="🔄">
   **Bidirectional Sync:** ZCore maintains backward compatibility by automatically synchronizing flat environment variables (such as `DATABASE_URL`, `POOL_SIZE`, `MAX_OVERFLOW`, and `LOG_LEVEL`) with their corresponding structured `DATABASE` and `LOGGING` models.
@@ -50,6 +65,8 @@ class AppSettings(Settings):
     LOGGING: LoggingSettings = LoggingSettings(
         level="DEBUG",
         slow_query_threshold_ms=200.0,
+        max_bytes=20 * 1024 * 1024,
+        backup_count=10,
     )
 
 # Register the subclass into ZCore's IoC container
@@ -79,7 +96,7 @@ ZCore provides **`ZContext`** (`ctx`), an asynchronous execution context store b
 ### Strongly-Typed Properties
 Instead of relying on unstructured dictionary strings, `ZContext` exposes strongly-typed, validated properties:
 
-* **`ctx.user_id`**: Validated as a `uuid.UUID`. Passing a string automatically coerces it to a UUID; invalid formats raise a `ValueError`.
+* **`ctx.user_id`**: Stores the authenticated user identifier as `Any | None`. As of `rc.2`, it seamlessly supports arbitrary identifier formats (such as auto-incrementing integers, UUIDs, or external strings like Auth0/Firebase IDs) without enforcing rigid type constraints.
 * **`ctx.restricted_fields`**: Managed as an immutable `frozenset`. Once loaded during authentication, business logic cannot accidentally mutate restriction paths mid-flight.
 
 ### Dynamic Context Operations

@@ -7,12 +7,14 @@ icon: Boxes
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-The `UnitOfWork` (UoW) coordinates transactional boundaries and buffers domain events, guaranteeing that events are dispatched only after database modifications have successfully committed. It implements the asynchronous context manager protocol.
+The `UnitOfWork` (UoW) coordinates transactional boundaries and buffers domain events, guaranteeing that events are dispatched only after database modifications have successfully committed. It implements the asynchronous context manager protocol and supports depth-aware nested execution.
 
 ## Class Definition
 
 ```python
+from sqlalchemy.ext.asyncio import AsyncSession
 from zcore import UnitOfWork
+from zcore.kernel.events import EventDispatcher
 
 class UnitOfWork:
     def __init__(self, session: AsyncSession, dispatcher: EventDispatcher):
@@ -34,8 +36,8 @@ class UnitOfWork:
       description: 'The central system event dispatcher used for publishing domain events.',
     },
     _pending_events: {
-      type: 'List[Tuple[str, Any]]',
-      description: 'Internal list of buffered domain event tuples (event_name, payload) awaiting successful commit.',
+      type: 'list[tuple[str, Any]]',
+      description: 'Direct reference to the session-level buffered domain event queue awaiting successful commit.',
     }
   }}
 />
@@ -46,7 +48,7 @@ class UnitOfWork:
 
 ### `register_event`
 
-Queues a domain event for post-commit dispatch.
+Queues a domain event for post-commit dispatch. Events registered across nested unit-of-work scopes are buffered into the shared session store (`session.info["uow_events"]`) and dispatched collectively upon the successful root commit.
 
 ```python
 def register_event(self, event_name: str, payload: Any) -> None: ...
@@ -64,18 +66,23 @@ def register_event(self, event_name: str, payload: Any) -> None: ...
     },
     returns: {
       type: 'None',
-      description: 'Appends the event tuple to the internal pending queue.',
+      description: 'Appends the event tuple to the session pending queue.',
     }
   }}
 />
 
 ### `commit`
 
-Commits the database session and sequentially dispatches all buffered domain events.
+Commits the database session and sequentially dispatches all buffered domain events. In nested transaction scopes, this method flushes pending operations to the database without committing the physical transaction until the outermost scope concludes.
 
 ```python
 async def commit(self) -> None: ...
 ```
+
+<Callout type="info" emoji="🔄">
+  **Nested Scope Flushing:**
+  When called inside a nested `UnitOfWork` scope (`session.info["uow_depth"] > 1`), `commit()` executes `await self.session.flush()` instead of a physical database commit. The actual database commit and post-commit event dispatching are deferred until the outermost root context exits.
+</Callout>
 
 <Callout type="warn" emoji="⚠️">
   If the database commit fails, the session is rolled back immediately, all pending events are purged, and the original database exception is re-raised.
@@ -85,14 +92,14 @@ async def commit(self) -> None: ...
   type={{
     returns: {
       type: 'None',
-      description: 'Awaits database commit and executes self.dispatcher.dispatch() on all buffered events.',
+      description: 'Awaits database commit and executes self.dispatcher.dispatch() on all buffered events upon root exit.',
     }
   }}
 />
 
 ### `rollback`
 
-Rolls back the database session and clears all pending domain events.
+Rolls back the database session, clears all pending domain events, and resets the transaction depth.
 
 ```python
 async def rollback(self) -> None: ...
@@ -102,7 +109,7 @@ async def rollback(self) -> None: ...
   type={{
     returns: {
       type: 'None',
-      description: 'Rolls back the active session and clears the _pending_events buffer.',
+      description: 'Rolls back the active session, resets uow_depth, and clears the _pending_events buffer.',
     }
   }}
 />
@@ -111,7 +118,7 @@ async def rollback(self) -> None: ...
 
 ## Context Manager Protocol
 
-`UnitOfWork` is designed to be used via `async with`. Entering the context marks the session with `session.info["uow_managed"] = True` to coordinate with `BaseService._safe_commit()`:
+`UnitOfWork` is designed to be used via `async with`. Entering the context increments `session.info["uow_depth"]` and marks the session with `session.info["uow_managed"] = True` to coordinate with `BaseService._safe_commit()`:
 
 ```python
 from zcore import UnitOfWork, EventDispatcher
@@ -125,3 +132,5 @@ async def checkout(order_repo, inventory_repo, dispatcher: EventDispatcher, orde
         # Buffered in memory; dispatched only if the database commit succeeds!
         uow.register_event("order.completed", {"order_id": str(order.id)})
 ```
+
+Upon block exit (`__aexit__`), `UnitOfWork` decrements `uow_depth`. If an exception occurred, it rolls back the entire session and discards all buffered events. If exiting the root boundary (`depth == 0`), it executes the final database commit and dispatches all accumulated events concurrently.

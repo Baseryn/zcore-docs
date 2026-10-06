@@ -1,0 +1,202 @@
+---
+title: How to extend BaseRouter with Custom Reusable Endpoints
+description: Build a shared AppBaseRouter to add reusable custom endpoints (such as bulk status updates or CSV export) across all your domain routers.
+icon: Network
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore's `BaseRouter` scaffolds 8 standard CRUD and search endpoints out of the box (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`).
+
+However, enterprise applications often require company-wide shared endpoints across multiple models—such as a **batch status changer (`PATCH /bulk-status`)**, **soft-delete bulk recovery (`POST /bulk-restore`)**, or **data export (`GET /export`)**.
+
+Instead of writing these handlers repeatedly in every domain, you can create a centralized `AppBaseRouter` that extends `BaseRouter` and attaches reusable endpoints across your entire architecture.
+
+<Callout type="info" emoji="💡">
+  **Looking for the `/lookup` endpoint?**
+  As of ZCore `v0.1.0-rc.2`, field-projected relational lookups (`POST /lookup`) are **built directly into `BaseRouter`**. You only need to define `lookup_schema = YourLookupSchema` in your router class.
+</Callout>
+
+---
+
+<Steps>
+  <Step>
+    ### 1. Define the Shared Request & Response Schemas
+
+    Create the shared Pydantic payload models that your custom endpoint will accept:
+
+    ```python
+    # shared/schemas.py
+    import uuid
+    from pydantic import BaseModel, Field
+
+
+    class BulkStatusUpdateIn(BaseModel):
+        ids: list[uuid.UUID] = Field(..., min_length=1, max_length=100)
+        status: str = Field(..., max_length=50)
+
+
+    class BulkOperationResult(BaseModel):
+        affected_count: int
+        message: str = "Operation completed successfully"
+    ```
+  </Step>
+
+  <Step>
+    ### 2. Create the Custom `AppBaseRouter`
+
+    Create a reusable base class that inherits from `BaseRouter`. Override `_register_routes()`, register your custom route using FastAPI's `add_api_route()`, and invoke `self._sort_routes()` to ensure proper route specificity ordering:
+
+    ```python
+    # shared/base/router.py
+    from typing import Any, Generic, TypeVar
+    from fastapi import Depends, status
+    from pydantic import BaseModel
+    from zcore import BaseRouter, BaseService, ResponseWrapper
+    from zcore.kernel import Injector
+    from shared.schemas import BulkOperationResult, BulkStatusUpdateIn
+
+    CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+    UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+
+
+    class AppBaseRouter(
+        BaseRouter[CreateSchemaType, UpdateSchemaType],
+        Generic[CreateSchemaType, UpdateSchemaType]
+    ):
+        """Custom enterprise base router adding organization-wide endpoints."""
+
+        enable_bulk_status: bool = False
+
+        def _register_routes(self) -> None:
+            # 1. Register the standard 8 ZCore CRUD endpoints
+            super()._register_routes()
+
+            # 2. Register custom company-wide endpoints conditionally
+            if self.enable_bulk_status:
+                self._register_bulk_status_route()
+
+            # 3. Always sort routes by specificity to prevent path shadowing
+            self._sort_routes()
+
+        def _register_bulk_status_route(self) -> None:
+            service_callable = self.service
+            service_dependency = Depends(Injector(service_callable))
+
+            async def _bulk_status_endpoint(
+                payload: BulkStatusUpdateIn,
+                service_inst: BaseService = service_dependency,
+            ) -> ResponseWrapper[BulkOperationResult]:
+                return await self.bulk_status_endpoint(payload, service_inst)
+
+            # Resolve route action for RBAC permissions (e.g. "tasks:update")
+            action = self.get_route_action("UPDATE") if self.model else ""
+            dependencies = self._normalize_dependencies(
+                self.get_route_dependencies("UPDATE", action)
+            )
+
+            self.router.add_api_route(
+                path="/bulk-status",
+                endpoint=_bulk_status_endpoint,
+                methods=["PATCH"],
+                dependencies=dependencies,
+                status_code=status.HTTP_200_OK,
+                response_model=ResponseWrapper[BulkOperationResult],
+                summary=f"Bulk update status for {self.model.__name__}",
+            )
+
+        async def bulk_status_endpoint(
+            self,
+            payload: BulkStatusUpdateIn,
+            service: BaseService,
+        ) -> ResponseWrapper[BulkOperationResult]:
+            """Execute bulk status update via the service layer."""
+            if hasattr(service, "bulk_update_status"):
+                count = await service.bulk_update_status(payload.ids, payload.status)
+            else:
+                # Fallback: update records using the service update_multi
+                update_data = {
+                    item_id: {"status": payload.status} for item_id in payload.ids
+                }
+                # Using dummy update schema or direct dictionary
+                results = await service.on_update_multi(update_data, partial=True)
+                count = len(results)
+
+            return ResponseWrapper(
+                data=BulkOperationResult(
+                    affected_count=count,
+                    message=f"Successfully updated {count} records."
+                )
+            )
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Inherit from `AppBaseRouter` in Domain Routers
+
+    Use `AppBaseRouter` instead of `BaseRouter` in your domain modules and activate the feature flag:
+
+    ```python
+    # tasks/routers.py
+    from zcore import RouteKey
+    from shared.base.router import AppBaseRouter
+    from .models import Task
+    from .schemas import TaskCreate, TaskResponse, TaskUpdate
+    from .services import TaskService
+
+
+    class TaskRouter(AppBaseRouter[TaskCreate, TaskUpdate]):
+        model = Task
+        create_schema = TaskCreate
+        update_schema = TaskUpdate
+        schema_out = TaskResponse
+        service = TaskService
+        prefix = "/tasks"
+        tags = ["Tasks"]
+
+        # Enable our custom shared endpoint
+        enable_bulk_status = True
+
+
+    router_instance = TaskRouter()
+    ```
+  </Step>
+
+  <Step>
+    ### 4. Client Execution Example
+
+    Start your server with `zc run` and execute a batch status update request:
+
+    ```bash
+    curl -X PATCH "http://localhost:8000/tasks/bulk-status" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer <token>" \
+      -d '{
+        "ids": [
+          "a3b8e284-8392-491a-a5f1-39c89284910a",
+          "b4c9f395-9403-402b-b6f2-40d90395021b"
+        ],
+        "status": "completed"
+      }'
+    ```
+
+    **Response:**
+    ```json
+    {
+      "success": true,
+      "message": "Success",
+      "data": {
+        "affected_count": 2,
+        "message": "Successfully updated 2 records."
+      },
+      "meta": null
+    }
+    ```
+  </Step>
+</Steps>
+
+<Callout type="warn" emoji="⚖️">
+  **Route Specificity Notice:**
+  Whenever you add static endpoints like `/bulk-status` or `/export`, always call `self._sort_routes()` at the end of `_register_routes()`. ZCore’s specificity sorter guarantees that static paths are evaluated before dynamic primary key patterns (like `/{id}`), preventing route collisions.
+</Callout>

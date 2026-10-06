@@ -123,7 +123,7 @@ async def handle(payload):
     category: 'independent',
     badge: '🟢 Independent',
     name: 'BaseRepository',
-    oneLine: 'Complete asynchronous CRUD, Keyset Pagination, and dynamic search out of the box.',
+    oneLine: 'Async CRUD, soft-delete restoration (restore/restore_multi), forced deletes, and keyset pagination.',
     code: `class TaskRepo(BaseRepository[Task]):
     def __init__(self, db: AsyncSession):
         super().__init__(Task, db)`,
@@ -152,7 +152,7 @@ result = await repo.get_list(pagination=params)`,
     category: 'composable',
     badge: '🟡 Composable',
     name: 'SearchEngine',
-    oneLine: 'Construct secure dynamic queries with recursive AND/OR filters and field restrictions.',
+    oneLine: 'Dynamic queries with inverted operators (not_like, not_in), logical NOT groups, and field restrictions.',
     code: `engine = SearchEngine(Task)
 query = engine.build_query(req)`,
     without: 'Boilerplate conditional SQL logic',
@@ -172,14 +172,15 @@ query = engine.build_query(req)`,
     category: 'orchestrated',
     badge: '🔴 Orchestrated',
     name: 'BaseRouter',
-    oneLine: 'Generates 7 secure endpoints. Fully overridable CRUD handlers with custom route injection.',
+    oneLine: 'Generates 8 secure endpoints (including field-projected POST /lookup) with specificity sorting.',
     code: `class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
     model = Task
     create_schema = TaskCreate
     update_schema = TaskUpdate
     schema_out = TaskResponse
+    lookup_schema = TaskResponse
     service = TaskService`,
-    without: '7 redundant endpoint functions',
+    without: '8 redundant endpoint functions',
   },
   {
     category: 'orchestrated',
@@ -329,7 +330,9 @@ export default function HomePage() {
 
             <div className="p-6 font-mono text-sm leading-relaxed text-zinc-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="text-zinc-600 mb-3"># Step 1: Your standard SQLAlchemy model</div>
-              <div><span className="text-emerald-400">class</span> <span className="text-emerald-300">Task</span>(Base):</div>
+              <div><span className="text-emerald-400">from</span> zcore <span className="text-emerald-400">import</span> Base, SoftDeleteMixin</div>
+              <br/>
+              <div><span className="text-emerald-400">class</span> <span className="text-emerald-300">Task</span>(Base, SoftDeleteMixin):</div>
               <div className="pl-4">__tablename__ = <span className="text-green-400">&quot;tasks&quot;</span></div>
               <div className="pl-4">id: Mapped[uuid.UUID] = mapped_column(primary_key=<span className="text-emerald-400">True</span>, default=uuid.uuid4)</div>
               <div className="pl-4">title: Mapped[str]</div>
@@ -345,7 +348,7 @@ export default function HomePage() {
 
             <div className="px-6 py-4 border-t border-zinc-900 bg-emerald-500/5 flex items-center gap-3">
               <CheckIcon />
-              <span className="text-xs text-emerald-400 font-semibold">Async methods, pagination, and policy-guarded search — out of the box.</span>
+              <span className="text-xs text-emerald-400 font-semibold">Async methods, pagination, soft-delete restoration, and policy-guarded search — out of the box.</span>
             </div>
           </div>
 
@@ -505,7 +508,7 @@ export default function HomePage() {
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">session.commit() blocks</td>
                 </tr>
                 <tr className="bg-white/40 dark:bg-zinc-950/30">
-                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Scaffold all 7 CRUD endpoints without route boilerplate</td>
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Scaffold all 8 CRUD &amp; lookup endpoints without route boilerplate</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">BaseRouter</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Individual route functions</td>
                 </tr>
@@ -515,7 +518,7 @@ export default function HomePage() {
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Depends() parameters</td>
                 </tr>
                 <tr className="bg-white/40 dark:bg-zinc-950/30">
-                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Execute background jobs with clean IoC & DB session isolation</td>
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Execute background jobs with clean IoC &amp; DB session isolation</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">background_task</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Manual BackgroundTasks boilerplate</td>
                 </tr>
@@ -553,7 +556,7 @@ export default function HomePage() {
               Scaffold &amp; Run in Seconds.
             </h2>
             <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed mb-6">
-              The built-in <code className="font-mono text-xs bg-zinc-200/60 dark:bg-zinc-800/80 px-1.5 py-0.5 rounded text-emerald-600 dark:text-emerald-400">zc</code> tool orchestrates your entire architecture — from interactive multi-database bootstrapping (SQLite, PostgreSQL, MySQL) with <code className="font-mono text-xs">uv</code>/<code className="font-mono text-xs">pip</code> virtualenvs, to granular 7-layer domain scaffolding, cryptographically secure secret generation, and zero-config development servers.
+              The built-in <code className="font-mono text-xs bg-zinc-200/60 dark:bg-zinc-800/80 px-1.5 py-0.5 rounded text-emerald-600 dark:text-emerald-400">zc</code> tool orchestrates your entire architecture — from interactive multi-database bootstrapping (SQLite, PostgreSQL, MySQL) with <code className="font-mono text-xs">uv</code>/<code className="font-mono text-xs">pip</code> virtualenvs, to granular 7-layer domain scaffolding, cryptographically secure secret generation, and cascading development servers with full Uvicorn option passthrough.
             </p>
             <Link
               href="/docs/how-to/use-cli-commands"
@@ -575,7 +578,7 @@ export default function HomePage() {
             <br/>
             <div><span className="text-zinc-600">$</span> cd core_api <span className="text-zinc-600">&amp;&amp;</span> zc startapp order_management</div>
             <div className="text-emerald-400">✔ Modular App &apos;order_management&apos; created</div>
-            <div className="text-zinc-500">  📄 models, schemas, repositories, services, routers, plugin, tests</div>
+            <div className="text-zinc-500">  📄 models, schemas, repositories, services, routers, plugin, test_order_management</div>
             <br/>
             <div><span className="text-zinc-600">$</span> zc run</div>
             <div className="text-zinc-500">INFO:     Uvicorn running on http://127.0.0.1:8000 (Reload: Enabled)</div>
@@ -686,10 +689,11 @@ export default function HomePage() {
             <div className="p-6 rounded-2xl border border-zinc-200 bg-white/70 dark:border-zinc-800/80 dark:bg-zinc-950/30 backdrop-blur-sm shadow-sm">
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseRepository</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300 font-mono">
-                <div className="flex items-center gap-2"><CheckIcon /> <span>create</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>create / create_multi</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span>update_multi</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span>get_list</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span>search</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>restore / restore_multi</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>delete(force=True)</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>get_list / search</span></div>
                 <div className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500"><MinusIcon /> <span className="text-xs font-sans">Override any DB action</span></div>
               </div>
             </div>
@@ -697,10 +701,10 @@ export default function HomePage() {
             <div className="p-6 rounded-2xl border border-zinc-200 bg-white/70 dark:border-zinc-800/80 dark:bg-zinc-950/30 backdrop-blur-sm shadow-sm">
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseService</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300 font-mono">
-                <div className="flex items-center gap-2"><CheckIcon /> <span>pre_create</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span>post_create</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span>pre_update</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span>post_delete</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>pre_create / post_create</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>pre_update / post_update</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>pre_restore / post_restore</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>post_delete(force=...)</span></div>
                 <div className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500"><MinusIcon /> <span className="text-xs font-sans">Extend or block writes</span></div>
               </div>
             </div>
@@ -708,7 +712,7 @@ export default function HomePage() {
             <div className="p-6 rounded-2xl border border-zinc-200 bg-white/70 dark:border-zinc-800/80 dark:bg-zinc-950/30 backdrop-blur-sm shadow-sm">
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseRouter</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
-                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Override create_endpoint, get_endpoint, etc.</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Override create_endpoint, lookup_endpoint, etc.</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Add custom routes directly to router.router</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Select active endpoints via RouteKey</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Dynamic query schema exports (?schema=true)</span></div>

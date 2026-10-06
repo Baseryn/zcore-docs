@@ -37,6 +37,7 @@ Instead of writing multiple Pydantic models for different user roles (e.g., `Tas
 
     class TaskResponse(Zchema):
         __model__ = "tasks"
+        __private__ = {"assignee_email"}  # Automatically hidden for unauthenticated guests
         
         id: uuid.UUID
         title: str
@@ -62,6 +63,10 @@ Instead of writing multiple Pydantic models for different user roles (e.g., `Tas
       During the request lifecycle, if the active user lacks certain permissions, their restricted fields are loaded into `ctx.restricted_fields` (e.g., `"tasks.view.assignee_email"`).
       
       When `TaskResponse` serializes the data, `Zchema` intercepts the process and **automatically prunes** the `assignee_email` from the JSON output. No `if` statements required.
+    </Callout>
+
+    <Callout type="info" emoji="🔒">
+      **Guest-Level Masking (`__private__`):** In addition to role-based pruning via `ctx.restricted_fields`, you can declare `__private__ = {"assignee_email"}` on your `Zchema`. These fields are automatically pruned for unauthenticated guest requests (`ctx.user_id is None`) across responses, inputs, and OpenAPI schemas.
     </Callout>
   </Step>
 </Steps>

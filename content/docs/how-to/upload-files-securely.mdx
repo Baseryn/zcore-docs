@@ -7,7 +7,7 @@ icon: Upload
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends your server against Path Traversal, Denial of Service (large files), and executable masquerading (e.g., PHP or `.exe` files disguised as `.jpg`).
+File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends your server against Path Traversal, Denial of Service (large files), and executable masquerading (e.g., PHP scripts or `.exe` binaries disguised as `.jpg`).
 
 <Steps>
   <Step>
@@ -28,6 +28,7 @@ File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends 
 
     storage = LocalStorageProvider(
         base_path="./storage/uploads",
+        url_prefix="/storage",
         validators=[
             # 1. Enforce strict 5 MB file size limit
             MaxFileSizeValidator(max_size_mb=5),
@@ -35,7 +36,7 @@ File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends 
             # 2. Check file extension
             FileExtensionValidator(allowed_extensions=[".png", ".jpg", ".jpeg", ".webp", ".pdf"]),
             
-            # 3. Inspect binary Magic Bytes to detect disguised scripts
+            # 3. Inspect binary Magic Bytes and scan against disguised scripts/XSS
             SafeMimeTypeValidator(allowed_mimes=["image/png", "image/jpeg", "image/webp", "application/pdf"])
         ]
     )
@@ -61,23 +62,32 @@ File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends 
     @router.post("/avatar")
     async def upload_avatar(
         file: UploadFile = File(...),
-        storage: Inject[StorageProvider]
+        storage: Inject[StorageProvider] = None
     ):
-        # Saves to ./storage/uploads/avatars/ with collision-resistant UUID filename
-        saved_path = await storage.upload(file, related_type="avatars")
-        return {"file_path": saved_path}
+        # Saves to ./storage/uploads/avatars/ with collision-free UUID filename
+        # Returns normalized web URL: "/storage/avatars/a3b8...png"
+        web_url = await storage.upload(file, folder="avatars")
+        return {"url": web_url}
     ```
+
+    <Callout type="info" emoji="🌐">
+      **Web URL Resolution:** Both `upload()` and `upload_stream()` save the file securely and immediately return the normalized, web-accessible public path (e.g., `/storage/avatars/5f8c41...png`) ready to be persisted into your database or sent back to clients.
+    </Callout>
   </Step>
 
   <Step>
     ### 3. Secure File Deletion
 
-    Delete stored assets safely. ZCore verifies that the path resides strictly inside the `base_path` before deleting:
+    Delete stored assets safely. ZCore accepts either the web URL or relative path, verifies that the target resides strictly inside `base_path`, and prevents sandbox traversal:
 
     ```python
     @router.delete("/avatar")
-    async def delete_avatar(file_path: str, storage: Inject[StorageProvider]):
-        success = await storage.delete(file_path)
+    async def delete_avatar(
+        url: str,
+        storage: Inject[StorageProvider]
+    ):
+        # Accepts "/storage/avatars/5f8c41...png" or relative paths
+        success = await storage.delete(url)
         return {"deleted": success}
     ```
   </Step>
@@ -85,7 +95,7 @@ File uploads are high-risk entry points. ZCore's `LocalStorageProvider` defends 
 
 <Callout type="info" emoji="🛡️">
   **Triple-Layer Security Architecture:**
-  * **Magic Bytes Verification:** Inspects the first 2048 header bytes against format signatures. Any binary containing PHP execution tags (`<?php`), HTML scripts (`<script`), Unix shebangs (`#!/`), or Windows PE headers (`MZ`) is immediately rejected with a critical security alert.
-  * **Path Traversal Defense:** Both `upload()` and `delete()` resolve system paths strictly and assert `.is_relative_to(base)`. Any directory breakout attempt (e.g., `../../etc/passwd`) is blocked.
-  * **Collision-Resistant Naming:** Uploaded files are automatically renamed with randomized UUID prefixes (`uuid4()[:15] + ext`) to prevent filesystem filename overwrites.
+  * **Magic Bytes & Script Inspection:** Reads the initial 8192 header bytes against known binary signatures and scans against PHP execution tags (`<?php`), HTML scripts (`<script`), event handlers (`onerror=`), Unix shebangs (`#!/`), and Windows PE headers (`MZ`).
+  * **Path Traversal Defense:** `upload()`, `upload_stream()`, and `delete()` resolve system paths strictly and assert `.is_relative_to(base)`. Any directory breakout attempt (e.g., `../../etc/passwd`) is safely blocked.
+  * **Collision-Free Naming:** Uploaded files are automatically renamed with high-entropy randomized UUIDs (`uuid4().hex + ext`) to prevent filesystem overwrites and preserve privacy.
 </Callout>

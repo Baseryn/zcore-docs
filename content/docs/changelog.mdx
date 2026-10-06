@@ -14,14 +14,160 @@ This page documents all notable architectural evolutions, breaking changes, secu
   **Upgrading ZCore:**
   To fetch the latest pre-release build, run:
   ```bash
-  pip install --upgrade fastapi-zcore-framework[all]
+  pip install --upgrade "fastapi-zcore-framework[all]==0.1.0rc2"
   ```
 </Callout>
 
 ---
 
-<Accordions type="multiple" defaultValue={['v0.1.0-rc.1']}>
-  <Accordion id="v0.1.0-rc.1" title="v0.1.0-rc.1 (Latest Pre-release) — September 12, 2026 🚀">
+<Accordions type="multiple" defaultValue={['v0.1.0-rc.2']}>
+  <Accordion id="v0.1.0-rc.2" title="v0.1.0-rc.2 (Latest Pre-release) — October 06, 2026 🚀">
+    Welcome to **v0.1.0-rc.2 (Release Candidate 2)** of the ZCore Framework! 🚀
+
+    As we approach the final validation phase before tagging our official **v1.0.0 Stable GA**, `v0.1.0-rc.2` focuses on framework-wide error normalization, operational robustness, and developer ergonomic refinements.
+
+    This release introduces an automated, normalized exception handling system conforming all HTTP errors to the `ResponseWrapper` envelope; implements an end-to-end soft-delete, restoration, and forced hard-delete lifecycle; scaffolds a high-performance, schema-projected `/lookup` endpoint; expands the dynamic AST search engine with negated operators and logical `NOT` grouping; establishes re-entrant, depth-aware Unit of Work coordination; generalizes user identifiers (`int`, `str`, `UUID`) across all subsystems; and introduces schema-level private field shielding for unauthenticated guests.
+
+    ### 🚀 Core Features & Architectural Advancements
+
+    #### 1. 🛡️ Unified Exception Handling & Error Normalization (`ResponseWrapper`)
+    All HTTP exceptions, validation failures, and internal server errors now strictly conform to the `ResponseWrapper` JSON envelope:
+    * **Pydantic Error Sanitization (`_sanitize_error_item`, `_format_error_location`):** Converts raw Pydantic error `loc` tuples into readable dot-separated paths (e.g., `body.email`, `query.limit`) and safely extracts validation context.
+    * **Standardized Handlers:**
+      * `request_validation_exception_handler`: Formats 422 errors with clean field-level error lists and a human-readable summary.
+      * `http_exception_handler`: Preserves original response headers while wrapping Starlette/FastAPI `HTTPException` instances.
+      * `response_validation_exception_handler`: Intercepts internal schema mismatch errors (500) and displays field diagnostics only when `settings.DEBUG` is enabled.
+      * `unhandled_exception_handler`: Catch-all fallback for uncaught runtime crashes with debug-gated stack traces.
+    * **Centralized Registration (`register_exception_handlers`):** Attach all handlers with a single call to `register_exception_handlers(app)` with selective inclusion flags.
+    * **Lazy Module Packaging:** Handlers are exported at the root package level via dynamic `__getattr__` resolution to prevent circular import overhead.
+
+    #### 2. 🗑️ End-to-End Soft-Delete Lifecycle & Restoration (`restore`, `force`)
+    Soft deletion is now seamlessly integrated across the Repository, Service, and Web layers:
+    * **Atomic Batch Soft-Delete:** `delete_multi()` executes atomic `UPDATE ... SET deleted_at=now()` with SQL dialect-aware `RETURNING` support and pre-fetch fallbacks.
+    * **Single & Batch Restoration:** Added `restore(target)` and `restore_multi(ids)` to `WriteRepositoryMixin` and `WriteServiceMixin` to recover soft-deleted records (`deleted_at=None`).
+    * **Forced Physical Hard Deletes:** Added `force: bool = False` across repository, service execution orchestrators, and lifecycle hooks (`pre_delete`, `post_delete`, `pre_delete_multi`, `post_delete_multi`).
+    * **Web Router Query Flag:** Auto-scaffolded DELETE endpoints accept `?force=true` (e.g., `DELETE /tasks/{id}?force=true`) to permanently purge records when requested.
+
+    #### 3. 🔍 Lightweight `LOOKUP` Endpoint & Schema-Driven Projections (`POST /lookup`)
+    Designed for autocomplete selectors, dropdown lists, and relational references:
+    * **Automatic Schema Projection (`_resolve_lookup_projections`):** Introspects `lookup_schema` against SQLAlchemy model metadata to selectively generate `load_only(*columns)` statements, always including primary keys.
+    * **Automatic Eager-Loader Configuration:** Detects relationships declared in `lookup_schema` and attaches optimal loader strategies (`selectinload` for collections, `joinedload` for scalar relations).
+    * **Strict Whitelist Protection (`allowed_lookup_fields`):** Client queries attempting to filter or sort on unauthorized fields are immediately rejected with a 400 `ValidationError`.
+    * **RBAC Integration:** Mapped to `Actions.LOOKUP` (`model.actions().LOOKUP`) for granular permission checks.
+
+    #### 4. ⚡ Search Engine Negation & Logical `NOT` Grouping (`SearchEngine`)
+    The dynamic JSON search engine now supports inverted filter operations:
+    * **Inverted Operators:** Added `not_like`, `not_ilike`, `not_contains`, `not_startswith`, `not_endswith`, `not_in`, `not_between`, and `is_not_null`.
+    * **SQL Expression Wrapping:** `_compare_column` detects `not_` prefixes and wraps clauses in SQLAlchemy's `not_()` expression.
+    * **Logical `NOT` Blocks:** Evaluates nested filter groups under `op="not"` as `not_(and_(*sub_exprs))` or single-field inversions.
+    * **Null Semantics:** `is_null` and `is_not_null` now accept boolean flags (`True`/`False`) or `None` values consistently.
+
+    #### 5. 🔗 Re-entrant Unit of Work & Deferred Domain Events (`UnitOfWork`)
+    Coordinates multi-service business transactions across complex modular monolith architectures:
+    * **Depth-Aware Re-entrancy (`uow_depth`):** Tracks execution nesting depth in `session.info['uow_depth']`. Nested `UnitOfWork` blocks execute safe intermediate `session.flush()` calls, delegating the physical `session.commit()` solely to the outermost root boundary.
+    * **Buffered Post-Commit Events:** Domain events registered via `uow.register_event()` across nested scopes accumulate in `session.info['uow_events']` and dispatch atomically **only after the root transaction commits**.
+    * **Global Rollback Safeguard:** Any unhandled exception resets depth to `0`, clears pending events, and executes an immediate session rollback.
+
+    #### 6. 🆔 Polymorphic User Identifiers (`int`, `str`, `UUID`)
+    Removed strict `uuid.UUID` type enforcement from core identity layers:
+    * **Polymorphic `ZContext` & `UserProtocol`:** `ZContext.user_id` and `UserProtocol.id` now accept `Any | None` (supporting integer IDs, UUIDs, Auth0/Firebase string IDs, or custom tenant keys).
+    * **Real-time Streaming (`StreamManager`):** Subscriber mapping queues (`users_queues`) now accept arbitrary user ID types with mixed-type string comparison routing.
+    * **Cursor Pagination PK Inspection:** Keyset cursor pagination dynamically inspects column types (`mapper.primary_key[0].type.python_type`), coercing cursor payload keys to `int` or `UUID` automatically.
+
+    #### 7. 🔒 Optional Authentication & Schema-Level Private Fields (`Zchema.__private__`)
+    Enables clean guest-friendly routes and sensitive field filtering:
+    * **Optional Authentication (`BaseAuth(auto_error=False)`):** Allows endpoints to accept optional authentication without raising `401 Unauthorized` on missing or invalid tokens.
+    * **Dependency Anchor (`get_optional_user_stub`):** Exported across `zcore` and `zcore.security` for optional route parameters.
+    * **Private Field Pruning (`__private__`):** Schemas can declare sensitive fields via `__private__: ClassVar[set[str]] = {"cost_price", "notes"}`. ZCore automatically prunes these fields from response payloads, input validations, and generated JSON schemas (`?schema=true`) when no authenticated user is present.
+
+    #### 8. ⚙️ Tunable Framework Settings & Dynamic Bounds Validation
+    Replaced magic numbers across subsystems with environment-driven settings in `Settings`:
+    * **Subsystem Tuning:** Added `PAGINATION_DEFAULT_SIZE` (20), `PAGINATION_MAX_SIZE` (100), `SEARCH_MAX_DEPTH` (3), `CACHE_LOCAL_MAXSIZE` (1000), `CACHE_DEFAULT_TTL` (3600), `CACHE_EVICTION_INTERVAL` (60), `STREAM_QUEUE_MAXSIZE` (100), and `AUTH_CACHE_TTL` (300).
+    * **Dynamic Parameter Validation:** Added Pydantic `@model_validator` across `PageNumberParams`, `CursorParams`, and `SearchRequest` to clamp requested page sizes within configured minimum and maximum boundaries.
+
+    #### 9. 🧪 Advanced Testing Harness & Sandboxing Engine (`zcore.testing`)
+    * **Database Table Lifecycle (`setup_test_database`):** Drop and recreate test database tables across sync fixtures or running event loops via `ThreadPoolExecutor` safely.
+    * **Event Sandboxing (`EventDispatcherSandbox`):** Snapshots and restores registered event subscribers across test runs, eliminating listener pollution.
+    * **Multi-Dependency Overrides:** `DatabaseRollback` and `ZTestClient` support custom engine injections, multiple authentication stub overrides, and strict Pydantic user model validation (`user_model`).
+
+    #### 10. 🪵 Non-Intrusive Logging & Scope Context Isolation
+    * **Status-Code-Aware Exception Logging:** Application and HTTP exceptions log at `DEBUG` for client errors (`< 500`) and `ERROR` for server failures (`>= 500`).
+    * **Independent Slow-Query Interceptor:** Slow queries exceeding `slow_query_threshold_ms` are logged even if general `log_sql_queries` is disabled.
+    * **Developer Console Mode:** Development mode preserves native Uvicorn console formatting via `passthrough_loggers`, switching cleanly to `ProcessorFormatter` JSON rendering in production.
+    * **Background Scope Context:** `background_scope` isolates Structlog contextvars, binds `task_id=scope_id`, and restores parent context on exit.
+
+    #### 11. 🖥️ Cascading CLI Server Configuration & Dynamic Scaffolding
+    * **Cascading Precedence (`zc run`):** Server parameters resolve with the precedence: `CLI Arguments > .env File > Defaults`.
+    * **Transparent Uvicorn Passthrough:** Uses `parse_known_args()` to forward arbitrary flags (e.g., `--root-path`, `--proxy-headers`) directly to Uvicorn.
+    * **Multi-Worker Safety:** Automatically disables `--reload` when `--workers > 1`.
+    * **Dynamic Test Filename Pattern:** `zc startapp <app_name>` generates Pytest files following standard naming conventions (`test_<app_name>.py`).
+
+    ---
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. Exception Handler Registration', '2. Delete Hook Signatures', '3. User Identifier Typing', '4. SQL Query Logging Default']}>
+      <Tab value="1. Exception Handler Registration">
+        Replace manual exception handler bindings in `main.py` with the unified `register_exception_handlers` utility.
+
+        ```python
+        # Before (v0.1.0-rc.1)
+        from zcore.exceptions import AppException, app_exception_handler
+
+        app.add_exception_handler(AppException, app_exception_handler)
+
+        # After (v0.1.0-rc.2)
+        from zcore import register_exception_handlers
+
+        register_exception_handlers(app)
+        ```
+      </Tab>
+
+      <Tab value="2. Delete Hook Signatures">
+        Custom service classes overriding delete hooks must now accept the optional `force: bool = False` keyword argument.
+
+        ```python
+        # Before (v0.1.0-rc.1)
+        class TaskService(BaseService[Task]):
+            async def pre_delete(self, id: Any) -> None:
+                ...
+
+            async def post_delete(self, model: Task) -> None:
+                ...
+
+        # After (v0.1.0-rc.2)
+        class TaskService(BaseService[Task]):
+            async def pre_delete(self, id: Any, force: bool = False) -> None:
+                ...
+
+            async def post_delete(self, model: Task, force: bool = False) -> None:
+                ...
+        ```
+      </Tab>
+
+      <Tab value="3. User Identifier Typing">
+        If your custom code strictly expected `uuid.UUID` for `ctx.user_id` or `UserProtocol.id`, update type annotations to accept `Any`.
+
+        ```python
+        # Before (v0.1.0-rc.1)
+        user_id: uuid.UUID | None = ctx.user_id
+
+        # After (v0.1.0-rc.2)
+        user_id: Any | None = ctx.user_id  # Supports int, str, and uuid.UUID
+        ```
+      </Tab>
+
+      <Tab value="4. SQL Query Logging Default">
+        `LoggingSettings.log_sql_queries` now defaults to `False` to reduce log noise. To enable SQL query dumping in development, update your settings or `.env`:
+
+        ```bash
+        LOG_SQL_QUERIES=true
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+
+  <Accordion id="v0.1.0-rc.1" title="v0.1.0-rc.1 — September 12, 2026 🚀">
     Welcome to **v0.1.0-rc.1 (Release Candidate 1)** of the ZCore Framework! 🚀
 
     As we officially transition from the Beta phase toward our milestone **v1.0.0** Stable GA, `v0.1.0-rc.1` marks a major milestone in framework stability, security hardening, and production readiness.

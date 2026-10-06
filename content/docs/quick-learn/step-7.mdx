@@ -44,7 +44,8 @@ The Service layer orchestrates business rules between the web layer and the data
       * **Read operations:** `post_get`, `post_get_multi`
       * **Create operations:** `pre_create`, `post_create`, `pre_create_multi`, `post_create_multi`
       * **Update operations:** `pre_update`, `post_update`, `pre_update_multi`, `post_update_multi`
-      * **Delete operations:** `pre_delete`, `post_delete`, `pre_delete_multi`, `post_delete_multi`
+      * **Delete operations:** `pre_delete`, `post_delete`, `pre_delete_multi`, `post_delete_multi` *(all receive `force: bool = False` to distinguish between soft-deletes and hard-deletes)*
+      * **Restore operations:** `pre_restore`, `post_restore`, `pre_restore_multi`, `post_restore_multi`
       * **Search operations:** `pre_search`, `post_search`
       
       Returning a dictionary from any `pre_*` hook merges that data directly into the database payload. This is ideal for tasks like auto-generating slug fields, populating audit timestamps, or running external API checks before finalizing database writes.

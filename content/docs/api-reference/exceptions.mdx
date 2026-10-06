@@ -1,17 +1,19 @@
 ---
 title: Exceptions & Centralized Error Handling
-description: API reference for ZCore's domain exception hierarchy, HTTP status code mappings, and standardized JSON error envelopes.
+description: API reference for ZCore's domain exception hierarchy, HTTP status code mappings, sanitization helpers, and unified handler registration.
 icon: TriangleAlert
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore provides a unified exception hierarchy mapped directly to standard HTTP status codes. When raised anywhere in your services, repositories, or schemas, these exceptions are intercepted by `app_exception_handler` and converted into consistent, structured JSON responses wrapped in `ResponseWrapper`.
+ZCore provides a unified exception hierarchy and a centralized normalization pipeline. When errors occur anywhere across services, repositories, schemas, or routing lifecycles, they are intercepted and rendered in the standard `ResponseWrapper[None]` JSON envelope.
+
+---
 
 ## Base Class: `AppException`
 
-The root runtime exception for all business and domain errors in ZCore.
+The root runtime exception for all custom business and domain errors in ZCore.
 
 ```python
 from zcore.exceptions import AppException
@@ -19,7 +21,7 @@ from zcore.exceptions import AppException
 class AppException(Exception):
     status_code: int = 500
 
-    def __init__(self, message: str, payload: Optional[dict] = None) -> None:
+    def __init__(self, message: str, payload: dict | None = None) -> None:
         super().__init__(message)
         self.message = message
         self.payload = payload
@@ -32,7 +34,7 @@ class AppException(Exception):
       description: 'A human-readable diagnostic error message.',
     },
     payload: {
-      type: 'Optional[dict]',
+      type: 'dict | None',
       default: 'None',
       description: 'Optional structured metadata dictionary providing additional context (e.g., invalid fields, entity IDs).',
     },
@@ -52,6 +54,7 @@ ZCore provides pre-configured domain exceptions mapped to standard HTTP status c
 
 ```python
 from zcore.exceptions import (
+    AppException,
     EntityNotFound,
     DuplicateEntity,
     ValidationError,
@@ -87,39 +90,98 @@ from zcore.exceptions import (
 
 ---
 
-## Global Exception Handler: `app_exception_handler`
+## Unified Handler Registration: `register_exception_handlers`
 
-Asynchronous handler configured on the root FastAPI application instance. It intercepts any `AppException`, logs structured diagnostics via `structlog`, and returns a `ZCoreJSONResponse`.
+Attaches all standardized exception normalization handlers to your FastAPI application in a single call, with granular boolean inclusion flags:
 
 ```python
-from zcore.exceptions import AppException, app_exception_handler
+from zcore import register_exception_handlers
 
-app.add_exception_handler(AppException, app_exception_handler)
+register_exception_handlers(app)
+```
+
+### Function Signature
+
+```python
+def register_exception_handlers(
+    app: FastAPI,
+    include_app_exceptions: bool = True,
+    include_validation_exceptions: bool = True,
+    include_http_exceptions: bool = True,
+    include_response_validation_exceptions: bool = True,
+    include_unhandled_exceptions: bool = True,
+) -> None: ...
 ```
 
 <TypeTable
   type={{
-    request: {
-      type: 'Request',
-      description: 'The active incoming FastAPI HTTP Request.',
+    app: {
+      type: 'FastAPI',
+      description: 'The target FastAPI application instance.',
     },
-    exc: {
-      type: 'AppException',
-      description: 'The captured application exception instance.',
+    include_app_exceptions: {
+      type: 'bool',
+      default: 'True',
+      description: 'Register handler for domain-level AppException subclasses.',
     },
-    returns: {
-      type: 'JSONResponse',
-      description: 'A formatted ZCoreJSONResponse with status_code=exc.status_code.',
+    include_validation_exceptions: {
+      type: 'bool',
+      default: 'True',
+      description: 'Register handler for FastAPI RequestValidationError (422).',
+    },
+    include_http_exceptions: {
+      type: 'bool',
+      default: 'True',
+      description: 'Register handler for Starlette/FastAPI HTTPException.',
+    },
+    include_response_validation_exceptions: {
+      type: 'bool',
+      default: 'True',
+      description: 'Register handler for internal ResponseValidationError (500).',
+    },
+    include_unhandled_exceptions: {
+      type: 'bool',
+      default: 'True',
+      description: 'Register catch-all fallback handler for generic Exception (500).',
     }
   }}
 />
 
 ---
 
-## Standardized JSON Error Response
+## Core Handlers Reference
 
-Every intercepted exception is rendered in the unified `ResponseWrapper` envelope:
+ZCore exports five specialized asynchronous handlers:
 
+### 1. `app_exception_handler`
+Intercepts any `AppException`, logs structured diagnostics via `structlog`, and returns a `ZCoreJSONResponse` matching `exc.status_code`.
+
+### 2. `request_validation_exception_handler`
+Intercepts `RequestValidationError` (422 errors) raised by FastAPI/Pydantic on invalid request bodies or query parameters. Sanitizes nested error tuples into readable dot-separated paths.
+
+### 3. `http_exception_handler`
+Intercepts `StarletteHTTPException` instances, mapping custom headers and exception details cleanly into the error envelope.
+
+### 4. `response_validation_exception_handler`
+Intercepts internal `ResponseValidationError` (500 errors). Masks sensitive schema details in production, revealing granular errors only when `settings.DEBUG = True`.
+
+### 5. `unhandled_exception_handler`
+Catch-all fallback handler for uncaught runtime exceptions. Records the full stack trace in structured logs while returning a safe, sanitized generic message in production.
+
+---
+
+## Error Sanitization Helpers
+
+ZCore formats complex Pydantic validation errors through internal sanitization utilities:
+
+* **`_format_error_location(loc)`**: Converts Pydantic location tuples (e.g. `("body", "items", 0, "title")`) into clean dot-separated field paths (`"body.items.0.title"`).
+* **`_sanitize_error_item(err)`**: Safely extracts `field`, `message`, `type`, and stringified `context` from raw error dictionaries.
+
+---
+
+## Standardized JSON Error Envelopes
+
+### Domain Exception (404 Not Found)
 ```json
 {
   "success": false,
@@ -134,7 +196,26 @@ Every intercepted exception is rendered in the unified `ResponseWrapper` envelop
 }
 ```
 
-<Callout type="info" emoji="🪵">
-  **Structured Diagnostic Logging:**
-  Whenever an `AppException` is caught, `app_exception_handler` automatically logs a structured warning containing the exception type, message, payload, HTTP method, URL path, and request correlation ID (`request_id`).
+### Request Validation Error (422 Unprocessable Entity)
+```json
+{
+  "success": false,
+  "message": "Validation error on 'body.title': Field required",
+  "data": null,
+  "meta": {
+    "error_type": "RequestValidationError",
+    "errors": [
+      {
+        "field": "body.title",
+        "message": "Field required",
+        "type": "missing"
+      }
+    ]
+  }
+}
+```
+
+<Callout type="info" emoji="🔒">
+  **Production Debug-Gating:**
+  For 500-level errors (`ResponseValidationError` and generic `Exception`), detailed error messages and raw validation lists are only exposed in the JSON response if `settings.DEBUG = True`. In production, a safe generic message is returned to prevent sensitive system disclosures.
 </Callout>

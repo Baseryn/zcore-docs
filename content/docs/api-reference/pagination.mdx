@@ -1,0 +1,282 @@
+---
+title: Pagination
+description: API reference for PageNumberPagination, CursorPagination, parameter schemas, and the PaginatedResult envelope.
+icon: ListOrdered
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ZCore provides two distinct pagination engines for relational SQLAlchemy queries: **`PageNumberPagination`** (offset-based with optional total count queries) and **`CursorPagination`** (keyset-based with URL-safe Base64 coordinate tokens and dynamic primary key inspection).
+
+## Module Imports
+
+All pagination classes and parameter models can be imported directly from the root package or the database subsystem:
+
+```python
+from zcore import (
+    BasePagination,
+    CursorPagination,
+    CursorParams,
+    PageNumberPagination,
+    PageNumberParams,
+    PaginatedResult,
+)
+# or: from zcore.db.pagination import ...
+```
+
+---
+
+## Result Container: `PaginatedResult[T]`
+
+A standardized generic envelope housing the retrieved slice of database entities alongside structural metadata.
+
+```python
+class PaginatedResult(Generic[T]):
+    def __init__(self, data: Sequence[T], meta: dict[str, Any]):
+        self.data = data
+        self.meta = meta
+```
+
+<TypeTable
+  type={{
+    data: {
+      type: 'Sequence[T]',
+      description: 'The list or sequence of retrieved model entities.',
+    },
+    meta: {
+      type: 'dict[str, Any]',
+      description: 'Structural pagination metadata (e.g., page, total_pages, next_cursor, has_more).',
+    }
+  }}
+/>
+
+---
+
+## Parameter Models
+
+### `PageNumberParams`
+
+Pydantic V2 schema validating query parameters for offset-based pagination. Page sizes are automatically bounded between `1` and `settings.PAGINATION_MAX_SIZE`.
+
+```python
+class PageNumberParams(BaseModel):
+    page: int = Field(default=1, ge=1)
+    size: int | None = None
+    sort_by: str | None = None
+    sort_order: Literal["asc", "desc"] = "asc"
+    include_count: bool = True
+```
+
+<TypeTable
+  type={{
+    page: {
+      type: 'int',
+      default: '1',
+      description: 'Target page number (must be >= 1).',
+    },
+    size: {
+      type: 'int | None',
+      default: 'settings.PAGINATION_DEFAULT_SIZE (20)',
+      description: 'Maximum records per page. Automatically clamped to settings.PAGINATION_MAX_SIZE (100).',
+    },
+    sort_by: {
+      type: 'str | None',
+      default: 'None',
+      description: 'Model attribute name to apply sorting on. Validated against model columns.',
+    },
+    sort_order: {
+      type: 'Literal["asc", "desc"]',
+      default: '"asc"',
+      description: 'Sorting direction for the sort_by column.',
+    },
+    include_count: {
+      type: 'bool',
+      default: 'True',
+      description: 'When True, executes a count subquery to calculate total records and pages. When False, uses limit(size + 1) to determine has_next without count overhead.',
+    }
+  }}
+/>
+
+### `CursorParams`
+
+Pydantic V2 schema validating query parameters for keyset-based cursor pagination.
+
+```python
+class CursorParams(BaseModel):
+    cursor: str | None = None
+    size: int | None = None
+```
+
+<TypeTable
+  type={{
+    cursor: {
+      type: 'str | None',
+      default: 'None',
+      description: 'URL-safe Base64-encoded keyset cursor coordinate. If None, queries from the start.',
+    },
+    size: {
+      type: 'int | None',
+      default: 'settings.PAGINATION_DEFAULT_SIZE (20)',
+      description: 'Maximum records per dataset. Clamped to settings.PAGINATION_MAX_SIZE (100).',
+    }
+  }}
+/>
+
+---
+
+## Pagination Engines
+
+### `PageNumberPagination[T]`
+
+Offset-based pagination strategy supporting dynamic column sorting and optional count execution.
+
+```python
+class PageNumberPagination(BasePagination[T]):
+    params_class = PageNumberParams
+
+    async def paginate(
+        self,
+        session: AsyncSession,
+        query: Select,
+        params: PageNumberParams,
+        model: Any
+    ) -> PaginatedResult[T]: ...
+```
+
+#### Execution Logic
+1. Computes SQL offset: `(params.page - 1) * params.size`.
+2. Validates `sort_by` against model columns via SQLAlchemy reflection, raising `ValidationError` if the column does not exist.
+3. If `include_count=True`:
+   * Executes a `func.count()` subquery without ordering to compute `total` and `total_pages`.
+   * Queries the bounded slice via `query.offset(offset).limit(size)`.
+4. If `include_count=False`:
+   * Queries `limit(size + 1)`. If the returned items exceed `size`, sets `has_next = True` and trims the extra item, avoiding count scans on large tables.
+
+#### Generated `meta` Structure
+```json
+{
+  "total": 150,
+  "page": 1,
+  "size": 20,
+  "total_pages": 8,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+---
+
+### `CursorPagination[T]`
+
+High-performance keyset pagination strategy designed for infinite feeds and high-throughput tables. It relies on indexed inequality comparisons (`WHERE col < val`) rather than expensive `OFFSET` scans.
+
+```python
+class CursorPagination(BasePagination[T]):
+    params_class = CursorParams
+
+    def __init__(
+        self,
+        cursor_field: str | None = None,
+        order: str = "desc"
+    ): ...
+
+    async def paginate(
+        self,
+        session: AsyncSession,
+        query: Select,
+        params: CursorParams,
+        model: Any
+    ) -> PaginatedResult[T]: ...
+```
+
+<TypeTable
+  type={{
+    cursor_field: {
+      type: 'str | None',
+      default: 'None',
+      description: 'Model attribute key used as coordinate. If None, dynamically inspects the declarative model and defaults to its primary key column.',
+    },
+    order: {
+      type: 'str',
+      default: '"desc"',
+      description: 'Sorting direction ("asc" or "desc").',
+    }
+  }}
+/>
+
+#### Dynamic Primary Key Inspection & Tie-Breaking
+When paginating by non-unique fields (e.g. `created_at`), duplicate timestamps can cause missing records. `CursorPagination` automatically pairs the coordinate field with the model's primary key (`pk`):
+
+* **Desc Order:** `WHERE (col < val) OR (col == val AND pk < last_pk)`
+* **Asc Order:** `WHERE (col > val) OR (col == val AND pk > last_pk)`
+
+The cursor string is an opaque, URL-safe Base64 token encoding `{"value": ..., "pk": ...}`. Type coercion safely handles datetime ISO strings, integer IDs, and UUID instances automatically.
+
+#### Generated `meta` Structure
+```json
+{
+  "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTA4LTE1VDA4OjAwOjAwIiwgInBrIjogImExYjJjM2Q0Li4uIn0",
+  "has_more": true,
+  "size": 20
+}
+```
+
+---
+
+## Standalone Usage Example
+
+You can use pagination engines directly on raw SQLAlchemy queries without inheriting from `BaseRepository` or `BaseRouter`:
+
+```python
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from zcore.db.pagination import CursorPagination, CursorParams
+from my_app.models import Task
+
+async def fetch_tasks_feed(
+    db: AsyncSession, 
+    cursor_token: str | None = None, 
+    page_size: int = 25
+):
+    query = select(Task)
+    params = CursorParams(cursor=cursor_token, size=page_size)
+    
+    # Defaults to primary key if cursor_field is omitted
+    paginator = CursorPagination(order="desc")
+    result = await paginator.paginate(db, query, params, model=Task)
+    
+    return {
+        "items": result.data,
+        "next_cursor": result.meta["next_cursor"],
+        "has_more": result.meta["has_more"]
+    }
+```
+
+---
+
+## Router Configuration
+
+To configure pagination on a `BaseRouter`, set `pagination_class`:
+
+```python
+from zcore import BaseRouter
+from zcore.db.pagination import CursorPagination, PageNumberPagination
+
+class TaskRouter(BaseRouter):
+    model = Task
+    service = TaskService
+    
+    # 1. Keyset Cursor Pagination (GET /tasks accepts cursor & size)
+    pagination_class = CursorPagination
+    
+    # 2. Or Page-Number Pagination (GET /tasks accepts page, size, sort_by, etc.)
+    # pagination_class = PageNumberPagination
+```
+
+<Callout type="info" emoji="⚙️">
+  **Tunable Defaults in Settings:**
+  Fallback boundaries across all pagination parameters are managed centrally via `.env`:
+  * `PAGINATION_DEFAULT_SIZE` (Default: `20`)
+  * `PAGINATION_MAX_SIZE` (Default: `100`)
+</Callout>

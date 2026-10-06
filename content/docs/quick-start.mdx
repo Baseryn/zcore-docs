@@ -72,7 +72,7 @@ This command generates a structured, independent directory layout for your domai
       <File name="services.py" />
       <File name="routers.py" />
       <File name="plugin.py" />
-      <File name="tests.py" />
+      <File name="test_tasks.py" />
     </Folder>
     <File name="main.py" />
     <File name=".env" />
@@ -164,8 +164,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI
-from zcore import Kernel, db_manager, register_db_event_dispatcher, settings
-from zcore.exceptions import AppException, app_exception_handler
+from zcore import (
+    Kernel,
+    db_manager,
+    register_db_event_dispatcher,
+    register_exception_handlers,
+    settings,
+)
 from zcore.logging import setup_logging
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
 
@@ -193,14 +198,14 @@ kernel.setup(app)
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(ScopedDependencyMiddleware)
 
-app.add_exception_handler(AppException, app_exception_handler)
+register_exception_handlers(app)
 
 @app.get("/")
 async def root():
     return {
         "status": "healthy",
         "framework": "ZCore",
-        "version": "0.1.0-rc.1",
+        "version": "0.1.0-rc.2",
         "debug": settings.DEBUG
     }
 ```
@@ -285,7 +290,7 @@ class TaskPlugin(Plugin):
         pass
 ```
 
-This single class scaffolds 7 secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}`, and `POST /search`.
+This single class scaffolds 8 secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `POST /search`, `POST /lookup`, `PUT /{id}`, `PATCH /{id}`, and `DELETE /{id}` (with optional `?force=true`).
 
 <Callout type="info" emoji="−">
   **Or don't.** Write standard `@router.get` and `@router.post` handlers inside your `plugin.py` setup method. You get the exact same raw FastAPI performance either way.
@@ -330,7 +335,7 @@ class TaskRepository(BaseRepository[Task]):
         super().__init__(model=Task, db=db)
 ```
 
-By simply defining this class, you gain access to async single & bulk CRUD operations (`create_multi`, `update_multi`, `delete_multi`), structured dynamic search filters (`contains`, `between`, `ilike`, etc.), and keyset cursor-based pagination.
+By simply defining this class, you gain access to async single & bulk CRUD operations (`create_multi`, `update_multi`, `delete_multi`), automatic soft-delete and atomic batch restoration (`restore`, `restore_multi`), forced physical deletions (`force=True`), structured dynamic search filters (`contains`, `between`, `not_in`, inverted operators), and keyset cursor-based pagination.
 
 <Callout type="info" emoji="−">
   **No lock-in:** You can bypass the repository at any time and write raw SQLAlchemy query statements directly in your routes whenever complex query logic demands it.
@@ -363,7 +368,7 @@ class TaskService(BaseService[Task]):
         return {"slug": "slugified-title"}
 ```
 
-Available lifecycle hooks include `pre_create`, `post_create`, `pre_update`, `post_update`, `pre_delete`, `post_delete`, and their `_multi` counterparts to cleanly separate business logic from routing layers.
+Available lifecycle hooks include `pre_create`, `post_create`, `pre_update`, `post_update`, `pre_delete`, `post_delete` (with `force` flag propagation), `pre_restore`, `post_restore`, and their `_multi` counterparts to cleanly separate business logic from routing layers.
 
 <Callout type="info" emoji="−">
   **Or don't.** You can keep your business logic directly inside standard route functions. ZCore doesn't force a strict service layer structure.
@@ -402,15 +407,17 @@ from zcore import Zchema
 
 class TaskResponse(Zchema):
     __model__ = "tasks"
+    __private__ = {"cost_price"}  # Automatically hidden for unauthenticated guests
     
     id: uuid.UUID
     title: str
-    assignee_email: str | None = None # Automatically hidden if the active user lacks scope
+    assignee_email: str | None = None  # Automatically hidden if the active user lacks scope
+    cost_price: float | None = None
     
     model_config = ConfigDict(from_attributes=True)
 ```
 
-When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and OpenAPI documentation (`?schema=true`).
+When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and OpenAPI documentation (`?schema=true`). For unauthenticated visitors, fields declared in `__private__` are stripped automatically.
 
 <Callout type="info" emoji="−">
   **Or don't.** You are welcome to use standard Pydantic models and define separate response schemas manually.
@@ -449,6 +456,10 @@ async with UnitOfWork(session, dispatcher) as uow:
 ```
 
 If any database statement fails inside the context manager, the entire transaction automatically rolls back and pending events are cleared.
+
+<Callout type="info" emoji="💡">
+  **Re-entrant Depth Tracking:** `UnitOfWork` is depth-aware. Nested service calls safely flush changes without prematurely committing, while domain events are held until the outermost root transaction succeeds.
+</Callout>
 
 <Callout type="info" emoji="−">
   **Or don't.** Use `db.commit()` directly for basic, single-write transactions.
@@ -492,5 +503,6 @@ No major rewrites required.
 | Scaffold standard CRUD API endpoints with zero boilerplate | `BaseRouter` | Explicit `@router` path functions |
 | Auto-wire service and repository dependencies | `Inject[T]` | Hand-written `Depends()` parameters |
 | Run isolated background jobs with IoC injection | `background_task` | Manual session & scope handling |
+| Normalize API errors into a unified envelope | `register_exception_handlers` | Manual `@app.exception_handler` definitions |
 
 Every native pattern in the right-hand column remains 100% valid. ZCore simply streamlines your architecture when you want to write less boilerplate.

@@ -1,6 +1,6 @@
 ---
 title: BaseCache & Caching Layer
-description: API reference for BaseCache with Redis integration, Pydantic deserialization, and in-memory TTLLRUCache fallback.
+description: API reference for BaseCache with Redis integration, Pydantic deserialization, tunable defaults, and in-memory TTLLRUCache fallback.
 icon: Database
 ---
 
@@ -18,7 +18,12 @@ from zcore.cache import BaseCache
 T = TypeVar("T")
 
 class BaseCache(Generic[T]):
-    def __init__(self, prefix: str) -> None:
+    def __init__(
+        self, 
+        prefix: str, 
+        local_maxsize: int | None = None, 
+        default_ttl: int | None = None
+    ) -> None:
         ...
 ```
 
@@ -31,6 +36,16 @@ class BaseCache(Generic[T]):
     prefix: {
       type: 'str',
       description: 'Namespace prefix applied to all keys managed by this instance (e.g., "tasks" creates keys like "tasks:123").',
+    },
+    local_maxsize: {
+      type: 'int | None',
+      default: 'settings.CACHE_LOCAL_MAXSIZE (1000)',
+      description: 'Optional maximum entries allowed in the local fallback store before LRU eviction.',
+    },
+    default_ttl: {
+      type: 'int | None',
+      default: 'settings.CACHE_DEFAULT_TTL (3600)',
+      description: 'Optional default expiration lifespan in seconds for stored cache records.',
     }
   }}
 />
@@ -91,7 +106,7 @@ async def get(
 Serializes and persists a key-value record with a Time-To-Live (TTL). Stores in Redis if available, falling back to the thread-safe local memory buffer on network failures.
 
 ```python
-async def set(self, key: str, value: T, ttl: int = 3600) -> None: ...
+async def set(self, key: str, value: T, ttl: int | None = None) -> None: ...
 ```
 
 <TypeTable
@@ -105,9 +120,9 @@ async def set(self, key: str, value: T, ttl: int = 3600) -> None: ...
       description: 'The data payload to serialize (using custom JSON encoder) and cache.',
     },
     ttl: {
-      type: 'int',
-      default: '3600',
-      description: 'Maximum cache lifespan in seconds (Default: 1 hour).',
+      type: 'int | None',
+      default: 'self.default_ttl (3600)',
+      description: 'Maximum cache lifespan in seconds. If omitted, falls back to the instance default_ttl.',
     }
   }}
 />
@@ -171,18 +186,33 @@ async def close_cache() -> None: ...
 
 ## Local In-Memory Fallback: `TTLLRUCache`
 
-Thread-safe in-memory cache featuring granular record-level expiration boundaries and LRU eviction:
+Thread-safe in-memory cache featuring granular record-level expiration boundaries and LRU eviction, dynamically bounded by settings:
 
 ```python
 from zcore.cache import TTLLRUCache
 
 class TTLLRUCache:
-    def __init__(self, maxsize: int = 1000) -> None: ...
+    def __init__(self, maxsize: int | None = None) -> None: ...
     def get(self, key: str) -> Any | None: ...
-    def set(self, key: str, value: Any, ttl: int = 3600) -> None: ...
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None: ...
     def delete(self, key: str) -> None: ...
     def evict_expired(self) -> None: ...
     
     @classmethod
     def evict_all_expired(cls) -> None: ...
 ```
+
+<TypeTable
+  type={{
+    'maxsize': {
+      type: 'int | None',
+      default: 'settings.CACHE_LOCAL_MAXSIZE (1000)',
+      description: 'Maximum volume of elements cached simultaneously before LRU eviction.',
+    },
+    'ttl in set()': {
+      type: 'int | None',
+      default: 'settings.CACHE_DEFAULT_TTL (3600)',
+      description: 'Lifespan limit in seconds before key is marked expired.',
+    }
+  }}
+/>

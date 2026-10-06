@@ -16,13 +16,15 @@ When you open an `async with ZTestClient(...)` context, ZCore orchestrates a com
 
 <Mermaid chart="graph TB
     Client[ZTestClient Entry] --> Sand[1. ContainerSandbox Snapshot]
-    Sand --> Life[2. AppLifespan Startup Hooks]
-    Life --> DB[3. DatabaseRollback Open Savepoint]
-    DB --> User[4. UserContext & DependencyOverride]
+    Sand --> EvtSand[2. EventDispatcherSandbox Snapshot]
+    EvtSand --> Life[3. AppLifespan Startup Hooks]
+    Life --> DB[4. DatabaseRollback Open Savepoint]
+    DB --> User[5. UserContext & DependencyOverride]
     User --> Exec[Execute Async Test Logic]
     Exec --> CleanDB[Rollback DB Transaction]
     CleanDB --> CleanLife[AppLifespan Shutdown Hooks]
-    CleanLife --> CleanSand[Restore Container Snapshot]
+    CleanLife --> CleanEvt[Restore Event Subscribers]
+    CleanEvt --> CleanSand[Restore Container Snapshot]
     CleanSand --> Done[Test Complete & Clean]"/>
 
 ---
@@ -48,7 +50,15 @@ async def tearDown(self):
 
 ---
 
-## 3. Lightning-Fast Database Rollbacks (`DatabaseRollback`)
+## 3. Event Bus Isolation (`EventDispatcherSandbox`)
+
+Domain-driven systems frequently attach ephemeral or test-specific event listeners. Without rigorous sandboxing, event subscriptions registered in one test case bleed into subsequent executions.
+
+`EventDispatcherSandbox` captures an isolated dictionary snapshot of all registered event callbacks in `EventDispatcher._subscribers`. Upon test completion, it clears active subscribers and restores the pristine pre-test subscriber registry.
+
+---
+
+## 4. Lightning-Fast Database Rollbacks (`DatabaseRollback`)
 
 Dropping tables, re-running database migrations, or truncating rows between test runs introduces severe latency.
 
@@ -61,22 +71,40 @@ Dropping tables, re-running database migrations, or truncating rows between test
   5. Upon test exit, it executes `transaction.rollback()`. The database is instantly reverted to its pre-test state in milliseconds.
 </Callout>
 
+### Schema Provisioning with `setup_test_database`
+
+Before running tests that interact with transactional rollbacks, the database tables themselves must exist. ZCore provides `setup_test_database()` to synchronously create or refresh your schema:
+
+```python
+# conftest.py
+import pytest
+from zcore.testing import setup_test_database
+
+@pytest.fixture(scope="session", autouse=True)
+def initialize_test_database():
+    # Safely creates all tables across existing event loops without async boilerplate
+    setup_test_database(drop_first=True)
+```
+
+`setup_test_database()` automatically detects whether an event loop is already active in the current thread (e.g. under pytest-asyncio) and safely dispatches execution via a background worker thread, eliminating loop conflicts.
+
 ---
 
-## 4. Context & User Dependency Overrides
+## 5. Context & User Dependency Overrides
 
 Testing role-based endpoints in standard FastAPI requires manually manipulating `app.dependency_overrides` and generating dummy JWT tokens.
 
 `ZTestClient` coordinates this automatically when `user_id` is passed:
 
-1. **`UserContext`:** Injects `user_id`, `scopes`, and `extra_context` directly into the `ZContext` store for the active async coroutine tree.
-2. **`DependencyOverride`:** Replaces the `get_current_user_stub` dependency with an internal `GenericMockUser` implementing `UserProtocol`.
+1. **`UserContext`:** Injects `user_id`, `scopes`, `is_superuser`, and `extra_context` directly into the `ZContext` store for the active async coroutine tree.
+2. **`DependencyOverride`:** Replaces `get_current_user_stub` and `get_optional_user_stub` (along with any targets in `user_dependency`) with an authentic Pydantic user instance (when `user_model` is specified) or an internal `GenericMockUser` implementing `UserProtocol`.
 
 ```python
 # Seamless user mocking without JWT logic
 async with ZTestClient(
     app=app,
     user_id=uuid.uuid4(),
+    user_model=AppUser,
     scopes=["tasks:delete", "tasks:create"],
     extra_context={"restricted_fields": ["tasks.view.salary"]}
 ) as client:
@@ -86,7 +114,7 @@ async with ZTestClient(
 
 ---
 
-## 5. Application Lifespan Execution (`AppLifespan`)
+## 6. Application Lifespan Execution (`AppLifespan`)
 
 `ZTestClient` automatically invokes FastAPI's `router.lifespan_context`. This guarantees that:
 * Kernel plugins execute their `before_startup` and `on_startup` hooks.

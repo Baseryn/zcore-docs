@@ -1,26 +1,34 @@
 ---
 title: SearchEngine
-description: API reference for the dynamic search engine, query builders, filter operators, and configurable relation depth.
+description: API reference for the dynamic search engine, query builders, filter operators, inverted comparisons, and configurable relation depth.
 icon: Search
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing configurable depth limits, wildcard escaping, and context security policies.
+The `SearchEngine` translates nested JSON filter trees into secure, optimized SQLAlchemy expressions while enforcing configurable depth limits, wildcard escaping, inverted operators, and context security policies.
 
 ## Class Definition
 
 ```python
-from typing import Type
+from collections.abc import Callable
+from typing import Any, TypeVar
 from zcore import SearchRequest
-from zcore.db.search import SearchEngine
-from zcore.db.setup import ModelType
+from zcore.config import settings
+from zcore.db.setup import Base
+
+ModelType = TypeVar("ModelType", bound=Base)
 
 class SearchEngine:
-    def __init__(self, model: Type[ModelType]):
+    def __init__(self, model: type[ModelType]):
         self.model = model
-        self.max_depth: int = getattr(model, "__max_search_depth__", 3)
+        self.max_depth: int = getattr(
+            model,
+            "__max_search_depth__",
+            getattr(settings, "SEARCH_MAX_DEPTH", 3),
+        )
+        self.custom_handlers: dict[str, Callable[[Any], Any]] = {}
         ...
 ```
 
@@ -31,12 +39,12 @@ class SearchEngine:
 <TypeTable
   type={{
     model: {
-      type: 'Type[ModelType]',
+      type: 'type[ModelType]',
       description: 'The root database model bound to this search instance.',
     },
     max_depth: {
       type: 'int',
-      default: '3 (or model.__max_search_depth__)',
+      default: 'model.__max_search_depth__ -> settings.SEARCH_MAX_DEPTH -> 3',
       description: 'The maximum allowable filter nesting and relation join depth.',
     },
     custom_handlers: {
@@ -87,7 +95,7 @@ Parses search inputs, validates context security policies, and constructs the ba
 def build_base_query(
     self, 
     search_in: SearchRequest, 
-    base_query: Optional[Select] = None
+    base_query: Select | None = None
 ) -> Select: ...
 ```
 
@@ -136,7 +144,7 @@ def build_query(self, search_in: SearchRequest) -> Select: ...
 
 ### `SearchRequest`
 
-Comprehensive request model containing dynamic search parameters.
+Comprehensive request model containing dynamic search parameters. Automatically validates and bounds `size` via `model_validator(mode="after")`.
 
 ```python
 from zcore import SearchRequest
@@ -145,29 +153,29 @@ from zcore import SearchRequest
 <TypeTable
   type={{
     filters: {
-      type: 'List[FilterItem] | None',
+      type: 'list[FilterItem] | None',
       default: '[]',
       description: 'A recursive collection of filter constraints.',
     },
     include: {
-      type: 'List[str] | None',
+      type: 'list[str] | None',
       default: '[]',
       description: 'Relationship dot-paths indicating database relationships to eager load (bounded by max_depth).',
     },
     sort: {
-      type: 'List[SortItem] | None',
+      type: 'list[SortItem] | None',
       default: '[]',
       description: 'Explicit ordering instructions.',
     },
     size: {
-      type: 'int',
-      default: '20',
-      description: 'The limit on retrieved records (min: 1, max: 100).',
+      type: 'int | None',
+      default: 'settings.PAGINATION_DEFAULT_SIZE (20)',
+      description: 'The limit on retrieved records. Clamped between 1 and settings.PAGINATION_MAX_SIZE (100).',
     },
     page: {
       type: 'int',
       default: '1',
-      description: 'The target page offset index.',
+      description: 'The target page offset index (min: 1).',
     },
     cursor: {
       type: 'str | None',
@@ -179,7 +187,7 @@ from zcore import SearchRequest
 
 ### `FilterItem`
 
-Pydantic model representing a single, structured filtering condition or nested logical group.
+Pydantic model representing a single filtering condition, inverted operator, or nested boolean group.
 
 <TypeTable
   type={{
@@ -189,21 +197,26 @@ Pydantic model representing a single, structured filtering condition or nested l
       description: 'The dotted path representation of the field to filter (e.g., "owner.email").',
     },
     op: {
-      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "ilike", "contains", "startswith", "endswith", "between", "in", "is_null", "or", "and"]',
-      description: 'The logical comparison, string match, range, or grouping operator to evaluate.',
+      type: 'Literal["eq", "ne", "gt", "lt", "ge", "le", "like", "not_like", "ilike", "not_ilike", "contains", "not_contains", "startswith", "not_startswith", "endswith", "not_endswith", "in", "not_in", "between", "not_between", "is_null", "is_not_null", "or", "and", "not"]',
+      description: 'The comparison, pattern matching, range, inverted operator, or logical grouping operator to evaluate.',
     },
     value: {
       type: 'Any | None',
       default: 'None',
-      description: 'The parameter value used during evaluation (e.g. string, scalar, or [min, max] list for between).',
+      description: 'The parameter value used during evaluation (e.g., scalar, string, or [min, max] list for between/not_between).',
     },
     items: {
-      type: 'List[FilterItem] | None',
+      type: 'list[FilterItem] | None',
       default: 'None',
-      description: 'Nested list of sub-filters to evaluate when the operator is "or" or "and".',
+      description: 'Nested list of sub-filters to evaluate when the operator is "or", "and", or "not".',
     }
   }}
 />
+
+<Callout type="info" emoji="⚡">
+  **Logical Negation (`not`):**
+  When `op="not"` is used with `items`, the sub-expressions are compiled as `not_(and_(*sub_exprs))`. When used with a single `field`, it compiles to `not_(field == value)`.
+</Callout>
 
 ### `SortItem`
 

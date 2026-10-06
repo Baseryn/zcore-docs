@@ -31,23 +31,25 @@ Retrieves or sets the authenticated user identifier for the active coroutine con
 
 ```python
 # Access
-current_id: uuid.UUID | None = ctx.user_id
+current_id: Any | None = ctx.user_id
 
-# Set (Accepts uuid.UUID, UUID string, or None)
-ctx.user_id = "123e4567-e89b-12d3-a456-426614174000"
+# Set (Accepts integer, string, uuid.UUID, or None)
+ctx.user_id = 1054
+ctx.user_id = "auth0|64f1b2c3"
+ctx.user_id = uuid.uuid4()
 ```
 
 <TypeTable
   type={{
     returns: {
-      type: 'Optional[uuid.UUID]',
-      description: 'The authenticated user UUID if set, otherwise None.',
+      type: 'Any | None',
+      description: 'The polymorphic user identifier (int, str, UUID) if set, otherwise None.',
     }
   }}
 />
 
-<Callout type="warn" emoji="⚠️">
-  The setter strictly validates string inputs. Passing an invalid UUID string raises a `ValueError`. Passing an unsupported type raises a `TypeError`.
+<Callout type="info" emoji="💡">
+  **Polymorphic Identity:** As of `rc.2`, `ctx.user_id` no longer enforces strict UUID coercion. It supports arbitrary integer, string, or UUID primary keys without raising type errors.
 </Callout>
 
 ### `restricted_fields`

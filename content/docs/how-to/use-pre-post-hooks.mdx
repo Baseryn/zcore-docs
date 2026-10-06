@@ -1,13 +1,13 @@
 ---
 title: How to use pre/post hooks in Services
-description: Execute business logic, compute fields, and coordinate side-effects before, during, or after database mutations.
+description: Execute business logic, compute fields, coordinate side-effects, and handle soft-delete restoration across mutation lifecycles.
 icon: GitBranch
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore's `BaseService` divides database operations into three layers: **Pre-hooks** (intercept/merge payload), **On-methods** (core repository execution), and **Post-hooks** (side-effects & cleanup).
+ZCore's `BaseService` divides database operations into three structured layers: **Pre-hooks** (intercept/merge payload), **On-methods** (core repository execution), and **Post-hooks** (side-effects, external notifications & cleanup).
 
 <Steps>
   <Step>
@@ -32,18 +32,23 @@ ZCore's `BaseService` divides database operations into three layers: **Pre-hooks
             # Merges automatically into the insert payload
             return {"slug": slugify(schema.title)}
 
-        async def post_delete(self, model: Task) -> None:
-            # Executes after deletion (e.g., delete files from storage)
-            if getattr(model, "file_path", None):
+        async def post_delete(self, model: Task, force: bool = False) -> None:
+            # Executes after deletion (e.g., delete files from storage if hard-deleted)
+            if force and getattr(model, "file_path", None):
                 # await storage.delete(model.file_path)
                 pass
+
+        async def post_restore(self, model: Task) -> None:
+            # Executes after a soft-deleted task is successfully restored
+            # logger.info(f"Task {model.id} restored")
+            pass
     ```
   </Step>
 
   <Step>
     ### 2. Overriding Core Execution (`on_*` Methods)
 
-    If you need to change **how** the entity is persisted in the repository (e.g., routing to a custom repository method or bypassing default behavior), override the `on_*` methods directly:
+    If you need to change **how** an entity is persisted in the repository (e.g., routing to a custom repository method or decorating execution), override the `on_*` methods directly:
 
     ```python
     class TaskService(BaseService[Task]):
@@ -54,9 +59,9 @@ ZCore's `BaseService` divides database operations into three layers: **Pre-hooks
             # Custom persistence delegation (surrounded safely by pre_create and post_create)
             return await self.repository.create(schema, **extra_data)
             
-        async def on_delete(self, target: Task | Any) -> Task | None:
-            # Example: Soft-delete override instead of permanent row deletion
-            return await self.repository.update(target, TaskUpdate(is_deleted=True), partial=True)
+        async def on_delete(self, target: Task | Any, force: bool = False) -> Task | None:
+            # Core delete delegation (delegates soft vs hard delete to repository)
+            return await self.repository.delete(target, force=force)
     ```
   </Step>
 
@@ -75,10 +80,14 @@ ZCore's `BaseService` divides database operations into three layers: **Pre-hooks
     | `post_update(model)` | Update (Single) | `None` | Clear cache keys or log modification audit trails. |
     | `pre_update_multi(data, partial)` | Update (Batch) | `None` | Intercept batch dictionary updates before execution. |
     | `post_update_multi(models)` | Update (Batch) | `None` | Perform side-effects after bulk updates finish. |
-    | `pre_delete(target)` | Delete (Single) | `None` | Verify dependencies or cascade rules before row removal. |
-    | `post_delete(model)` | Delete (Single) | `None` | Purge associated files from local/S3 storage. |
-    | `pre_delete_multi(ids)` | Delete (Batch) | `None` | Validate or check permissions for a list of target IDs. |
-    | `post_delete_multi(models)` | Delete (Batch) | `None` | Batch cleanup of external resources after deletions. |
+    | `pre_delete(id, force=False)` | Delete (Single) | `None` | Verify dependencies or cascade rules before row removal. |
+    | `post_delete(model, force=False)` | Delete (Single) | `None` | Purge associated files from storage after deletion. |
+    | `pre_delete_multi(ids, force=False)` | Delete (Batch) | `None` | Validate or check permissions for a list of target IDs. |
+    | `post_delete_multi(models, force=False)` | Delete (Batch) | `None` | Batch cleanup of external resources after deletions. |
+    | `pre_restore(id)` | Restore (Single) | `None` | Pre-validation checks before restoring a soft-deleted record. |
+    | `post_restore(model)` | Restore (Single) | `None` | Trigger side-effects or logging after a record is restored. |
+    | `pre_restore_multi(ids)` | Restore (Batch) | `None` | Validate or check permissions before restoring batch records. |
+    | `post_restore_multi(models)` | Restore (Batch) | `None` | Run notifications or audit logs after batch restorations. |
     | `pre_search(search_in)` | Search | `None` | Inspect or mutate `SearchRequest` filters dynamically. |
     | `post_search(models)` | Search | `None` | Post-process or enrich dynamic search query results. |
   </Step>

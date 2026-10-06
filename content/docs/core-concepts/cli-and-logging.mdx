@@ -1,12 +1,12 @@
 ---
 title: CLI & Structured Logging
-description: Deep dive into ZCore's introspection-based environment scaffolding and unified structlog observability pipeline.
+description: Deep dive into ZCore's cascading server runner, introspection-based environment scaffolding, and unified structlog observability pipeline.
 icon: Terminal
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore provides native tooling to streamline developer ergonomics and guarantee production observability through introspection-driven CLI commands and a centralized, context-aware logging pipeline.
+ZCore provides native tooling to streamline developer ergonomics and guarantee production observability through introspection-driven CLI commands, cascading development servers, and a centralized, context-aware logging pipeline.
 
 ---
 
@@ -29,23 +29,45 @@ zc genenv --force -o .env.production.example
 
 ---
 
-## 2. Structured Logging Pipeline (`structlog`)
+## 2. Cascading Server Runner (`zc run`)
+
+ZCore provides an intelligent development and production server runner that resolves configuration hierarchically:
+
+> **CLI Arguments** $\longrightarrow$ **.env File Variables** $\longrightarrow$ **Built-in Defaults**
+
+### Architecture & Precedence Resolution
+When executing `zc run [app]`, the CLI runner executes the following lifecycle:
+
+1. **Environment File Parsing:** Reads key-value pairs safely from `.env` (or custom file via `--env-file`), resolving `APP_MODULE`, `UVICORN_APP`, `HOST`, `PORT`, `RELOAD`, `DEBUG`, `WORKERS`, and `LOG_LEVEL`.
+2. **CLI Override Enforcement:** Explicit flags (e.g. `--host 0.0.0.0 --port 8080`) take immediate precedence over `.env` variables and defaults (`127.0.0.1:8000`).
+3. **Smart Multi-Worker Protection:** When `--workers` is set to greater than `1` (or specified in `.env`), live code reloading (`--reload`) is **automatically disabled** to prevent worker race conditions.
+4. **Transparent Uvicorn Passthrough:** The CLI uses `parse_known_args()` to capture any arbitrary Uvicorn flags (such as `--proxy-headers`, `--ssl-keyfile`, or `--forwarded-allow-ips`) and forwards them directly to the underlying server process.
+
+```bash
+# Example: Production multi-worker execution with arbitrary Uvicorn flags
+zc run --workers 4 --log-level warning --proxy-headers --forwarded-allow-ips="*"
+```
+
+---
+
+## 3. Structured Logging Pipeline (`structlog`)
 
 Standard FastAPI, Uvicorn, and SQLAlchemy logging often outputs unformatted, duplicated text streams that are difficult to parse in log aggregators.
 
 ZCore's `setup_logging()` intercepts and unifies this pipeline through `ProcessorFormatter`:
 
 <Mermaid chart="graph TB
-    Uvicorn[Uvicorn Logs] --> Clear[Clear Muted Handlers]
-    SQL[SQLAlchemy Queries] --> Clear
-    App[App & Service Logs] --> Clear
-    Clear --> Struct[Unified structlog Engine]
+    App[App & Service Logs] --> Struct[Unified structlog Engine]
+    Muted[muted_loggers: sqlalchemy.engine] --> Drop[Clear Handlers & Suppress]
+    PassDev[passthrough_loggers: uvicorn in Dev] --> Console[Native Formatted Console Output]
+    InterceptProd[intercept_loggers: uvicorn in Prod] --> Struct
     Struct --> Context[structlog.contextvars merge request_id]
-    Context --> Mode{json_format or not DEBUG?}
-    Mode -- False --> Dev[ConsoleRenderer + rich.traceback]
-    Mode -- True --> Prod[JSONRenderer for Grafana/Datadog]"/>
+    Context --> Mode[JSONRenderer in Prod / ConsoleRenderer in Dev]"/>
 
-1. **Suppression of Duplicate Stream Handlers:** Clears default stream handlers from configured loggers in `muted_loggers` (default: `uvicorn`, `uvicorn.access`, `uvicorn.error`, and `sqlalchemy.engine`), setting `propagate = True` to channel all records into `structlog`.
+1. **Granular Logger Routing (Tri-Split Loggers):** ZCore categorizes loggers into three distinct groups in `LoggingSettings`:
+   * `muted_loggers` (default: `["sqlalchemy.engine"]`): Clears handlers and sets `propagate = False` to prevent noisy low-level logs.
+   * `passthrough_loggers` (default: `["uvicorn", "uvicorn.access", "uvicorn.error"]`): Preserves native, colorized Uvicorn console formatting in development mode (`propagate = False`).
+   * `intercept_loggers` (default: `["uvicorn", "uvicorn.access", "uvicorn.error"]`): Clears handlers and channels Uvicorn output into `structlog` as structured JSON records when running in production mode (`propagate = True`).
 2. **Contextual Distributed Tracing:** `RequestLogMiddleware` extracts or generates an `x-request-id` header (validated against `^[a-zA-Z0-9\-\.\_\:]{8,64}$`), binds it via `structlog.contextvars.bind_contextvars(request_id=...)`, and appends the correlation ID to response headers. Every log message emitted across repositories, services, or events automatically includes the unique `request_id`, while HTTP requests log `status_code`, `client_ip`, and `duration_ms`.
 3. **Adaptive Output Rendering:**
    * **Development (`DEBUG = True` or `json_format = False`):** Colorized, human-readable console rendering with formatted tracebacks via `rich.traceback`.
@@ -61,11 +83,14 @@ from zcore.config import LoggingSettings, Settings
 class AppSettings(Settings):
     LOGGING: LoggingSettings = LoggingSettings(
         level="INFO",
-        json_format=None,
-        log_sql_queries=True,
-        slow_query_threshold_ms=200.0,
-        file_path="./logs/app.log",
-        muted_loggers=["uvicorn", "uvicorn.access", "uvicorn.error", "sqlalchemy.engine"],
+        json_format=None,              # None: Console in Debug, JSON in Production
+        log_sql_queries=False,         # Defaults to False in rc.2 to avoid noise
+        slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms (works independently!)
+        file_path="./logs/app.log",    # Enables RotatingFileHandler
+        max_bytes=10 * 1024 * 1024,    # Rotate when file reaches 10MB (Default: 10MB)
+        backup_count=5,                # Retain 5 rotated log backups (Default: 5)
+        muted_loggers=["sqlalchemy.engine"],
+        passthrough_loggers=["uvicorn", "uvicorn.access", "uvicorn.error"],
         custom_processors=[]
     )
 ```
@@ -85,7 +110,9 @@ setup_logging()
 setup_logging(
     config=LoggingSettings(
         level="DEBUG",
-        file_path="./logs/app.log",  # Automatic RotatingFileHandler (10MB, 5 backups)
+        file_path="./logs/app.log",
+        max_bytes=20 * 1024 * 1024,
+        backup_count=10,
         slow_query_threshold_ms=100.0
     )
 )
@@ -112,5 +139,5 @@ setup_logging(
 
 <Callout type="info" emoji="⚡">
   **SQL Query Diagnostics:**
-  `DatabaseManager` hooks directly into SQLAlchemy cursor lifecycle events (`before_cursor_execute` and `after_cursor_execute`). When `log_sql_queries` is enabled, it logs clean, sanitized SQL statements along with execution durations in milliseconds (`duration_ms`), while automatically filtering out internal schema catalog noise. If `slow_query_threshold_ms` is configured, queries completing below the threshold are suppressed.
+  `DatabaseManager` hooks directly into SQLAlchemy cursor lifecycle events (`before_cursor_execute` and `after_cursor_execute`). When `log_sql_queries` is enabled, it logs clean, sanitized SQL statements along with execution durations in milliseconds (`duration_ms`), while automatically filtering out internal schema catalog noise. If `slow_query_threshold_ms` is configured, slow queries are tracked and logged independently, even if general query logging is turned off.
 </Callout>

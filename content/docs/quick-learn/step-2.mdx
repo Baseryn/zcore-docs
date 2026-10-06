@@ -52,7 +52,16 @@ ZCore does not hide SQLAlchemy; it orchestrates it. In this step, we will initia
       **Under the hood:** ZCore attaches event listeners to the SQLAlchemy engine. Every time a query is executed, ZCore calculates the duration in milliseconds and logs it using `structlog`. It also intelligently filters out noisy system queries (like `pg_catalog` lookups) so your logs remain clean.
     </Callout>
 
-    When you run your app later (in Step 10), your logs will look like this:
+    In `rc.2`, SQL query logging defaults to `False` to prevent console noise during development. You can enable it via `.env` or capture slow queries exclusively:
+
+    ```dotenv
+    # .env
+    LOG_SQL_QUERIES=True                # Enable logging all SQL queries
+    # OR keep it False and set a slow-query threshold:
+    # SLOW_QUERY_THRESHOLD_MS=100.0     # Only log queries exceeding 100ms
+    ```
+
+    When query logging is enabled, your logs will look like this:
 
     ```log
     [info] sql_query sql=SELECT tasks.id FROM tasks params=() duration_ms=1.23

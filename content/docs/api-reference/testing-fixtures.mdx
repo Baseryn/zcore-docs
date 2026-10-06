@@ -40,22 +40,69 @@ sandbox = ContainerSandbox()
 
 ---
 
+### `EventDispatcherSandbox`
+
+Snapshots all registered subscribers on `EventDispatcher` during `setUp` and restores them during `tearDown`. Prevents event listeners or handlers registered dynamically in one test from leaking into subsequent test suites.
+
+```python
+from zcore.testing import EventDispatcherSandbox
+
+# Resolves EventDispatcher automatically from IoC container if dispatcher is None
+event_sandbox = EventDispatcherSandbox(dispatcher=None)
+```
+
+<TypeTable
+  type={{
+    dispatcher: {
+      type: 'EventDispatcher | None',
+      default: 'None',
+      description: 'Target EventDispatcher instance to sandbox. If None, resolves from the IoC container automatically.',
+    }
+  }}
+/>
+
+---
+
 ### `DatabaseRollback`
 
-Provides a lightning-fast database testing strategy using nested savepoints without dropping tables or running migrations.
+Provides a lightning-fast database testing strategy using nested savepoints without dropping tables or running migrations. Supports both native `DatabaseManager` configurations and custom engines with dependency overrides.
 
 ```python
 from zcore.testing import DatabaseRollback
 
-db_rollback = DatabaseRollback()
+db_rollback = DatabaseRollback(
+    engine=None,           # Custom AsyncEngine (defaults to db_manager._engine)
+    db_dependency=None,    # Target dependency callable(s) to override
+    app=None               # FastAPI application requiring dependency overrides
+)
 ```
+
+<TypeTable
+  type={{
+    engine: {
+      type: 'AsyncEngine | None',
+      default: 'None',
+      description: 'Custom SQLAlchemy AsyncEngine instance. Defaults to db_manager._engine if unconfigured.',
+    },
+    db_dependency: {
+      type: 'Any | Sequence[Any] | None',
+      default: 'None',
+      description: 'Single or sequence of database session dependencies to override with the savepoint session.',
+    },
+    app: {
+      type: 'FastAPI | None',
+      default: 'None',
+      description: 'Target FastAPI application instance requiring dependency overrides.',
+    }
+  }}
+/>
 
 <Callout type="info" emoji="⚙️">
   **The Savepoint Pipeline:**
-  1. Opens an asynchronous connection on `db_manager._engine`.
-  2. Begins a root transaction.
+  1. Opens an asynchronous connection on the target engine (`db_manager._engine` or explicit `engine`).
+  2. Begins a root transaction on that connection.
   3. Instantiates an `AsyncSession` with `join_transaction_mode="create_savepoint"`.
-  4. Registers this session as the active scoped instance in the `IoCContainer` and mocks `db_manager.session`.
+  4. Registers this session as the active scoped instance in the `IoCContainer`, mocks `db_manager.session`, and overrides any configured `db_dependency` on `app`.
   5. On `tearDown`, it rolls back the root transaction, closes the connection, and restores original session providers.
 </Callout>
 
@@ -66,11 +113,13 @@ db_rollback = DatabaseRollback()
 Injects mock user metadata into the request-scoped `_request_context_store` during `setUp` and resets the `contextvars.Token` on `tearDown`.
 
 ```python
+import uuid
 from zcore.testing import UserContext
 
 user_fixture = UserContext(
     user_id=uuid.uuid4(),
     scopes=["tasks:view", "tasks:create"],
+    is_superuser=False,
     extra_context={"restricted_fields": ["tasks.view.salary"]}
 )
 ```
@@ -79,12 +128,17 @@ user_fixture = UserContext(
   type={{
     user_id: {
       type: 'Any',
-      description: 'The user UUID or identifier to bind to ctx.user_id.',
+      description: 'The polymorphic user identifier (UUID, int, or str) to bind to ctx.user_id.',
     },
     scopes: {
       type: 'list[str] | None',
       default: '[]',
       description: 'Security permission scopes to bind to ctx.scopes.',
+    },
+    is_superuser: {
+      type: 'bool',
+      default: 'False',
+      description: 'Boolean flag indicating if the mock user possesses administrator bypass privileges.',
     },
     extra_context: {
       type: 'dict[str, Any] | None',
@@ -156,10 +210,18 @@ lifespan_fixture = AppLifespan(app=app)
 A composite fixture that chains multiple `ZTestFixture` instances, executing `setUp` in sequential order and `tearDown` in **reversed dependency order**:
 
 ```python
-from zcore.testing import ZTest
+from zcore.testing import (
+    AppLifespan,
+    ContainerSandbox,
+    DatabaseRollback,
+    EventDispatcherSandbox,
+    UserContext,
+    ZTest,
+)
 
 orchestrator = ZTest(
     ContainerSandbox(),
+    EventDispatcherSandbox(),
     AppLifespan(app),
     DatabaseRollback(),
     UserContext(user_id=mock_id, scopes=["admin"])

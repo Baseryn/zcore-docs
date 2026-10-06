@@ -40,6 +40,17 @@ Maintaining distinct Pydantic models for different user roles (e.g., `TaskCreate
 3. **JSON Schema Generation (OpenAPI & Dynamic Forms):**
    By overriding `__get_pydantic_json_schema__`, `Zchema` dynamically alters the generated Draft-7 JSON Schema. Forbidden fields are stripped from both the `properties` definition and the `required` validation array.
 
+### Guest Masking (`__private__`) & Performance Early-Exit
+
+* **Unauthenticated Contexts (`__private__`):** In addition to active user permissions, `Zchema` allows declaring sensitive attributes that should never appear for guests:
+  ```python
+  class ProductResponse(Zchema):
+      __model__ = "products"
+      __private__ = {"wholesale_cost", "margin"}  # Hidden when ctx.user_id is None
+  ```
+  When `ctx.user_id` is missing, fields listed in `__private__` are automatically merged into the relative restriction paths across validation, serialization, and schema queries.
+* **Zero-Overhead Serialization:** `Zchema` implements early-exit guards. If a request context contains no active restrictions (or if serialized payloads evaluate to non-dictionary primitives), data pruning bypasses recursive traversal entirely, serializing clean payloads with native Pydantic V2 speed.
+
 ---
 
 ## 2. Context-Aware Path Resolution
@@ -61,7 +72,7 @@ class TaskResponse(Zchema):
 
 ### Supported Path Resolution Syntax
 
-* **Action-Scoped Restrictions:** If `ctx.restricted_fields` contains `"tasks.view.salary"`, `Zchema` strips `salary` strictly on `view` (GET) operations.
+* **Action-Scoped Restrictions:** If `ctx.restricted_fields` contains `"tasks.view.salary"`, `Zchema` strips `salary` strictly on `view` (GET) operations. Standard actions recognized include `listview`, `view`, `create`, `update`, `delete`, and `lookup`.
 * **Global Domain Restrictions:** If `restricted_fields` contains `"tasks.salary"`, `Zchema` strips `salary` across all actions (create, update, view).
 * **Recursive Nested Restrictions:** If `restricted_fields` contains `"tasks.view.assignee.email"`, `Zchema` traverses the nested `assignee` dictionary/list and prunes only the `email` key.
 * **Full-Model Masking (Wildcard):** If `restricted_fields` contains `"tasks.view"` or `"tasks"`, `Zchema` prunes the entire model (`*`), returning an empty representation.

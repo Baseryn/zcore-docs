@@ -64,32 +64,61 @@ ZCore does not couple your application to a rigid user table. Instead, **`BaseAu
     Decode --> CacheCheck{3. Check BaseCache user:identity}
     CacheCheck -- Hit --> ActiveCheck[4. Validate is_active == True]
     CacheCheck -- Miss --> Fetch[5. Execute self.fetch_user identity]
-    Fetch --> SetCache[Store in BaseCache TTL: 300s]
+    Fetch --> SetCache[Store in BaseCache TTL from AUTH_CACHE_TTL]
     SetCache --> ActiveCheck
     ActiveCheck --> Bind[6. Bind attributes to ZContext ctx.user_id, restricted_fields]
     Bind --> Done[Proceed to Route Handler]"/>
 
+### Dynamic User Cache Lifespan (`AUTH_CACHE_TTL`)
+`BaseAuth` caches resolved user sessions to eliminate redundant database queries on every authenticated request. The cache expiration time is dynamically resolved from `settings.AUTH_CACHE_TTL` (default: **300 seconds** / 5 minutes) or can be passed explicitly via `cache_ttl` in the constructor.
+
 ### Custom Authentication Implementation
+
+`UserProtocol` models user characteristics flexibly: `id` is typed as `Any`, seamlessly supporting auto-incrementing integers, UUIDs, or external strings:
 
 ```python
 # auth.py
+from typing import Any
 from pydantic import BaseModel
-import uuid
 from zcore import BaseAuth
 
 class AppUser(BaseModel):
-    id: uuid.UUID
+    id: Any  # Supports UUID, int, or str
     is_active: bool = True
     is_superuser: bool = False
     scopes: list[str] = []
     all_restricted_fields: list[str] = []
 
 class CustomAuth(BaseAuth[AppUser]):
+    # cache_ttl is optional; falls back to settings.AUTH_CACHE_TTL (300s)
+    def __init__(self, auto_error: bool = True):
+        super().__init__(user_schema=AppUser, cache_prefix="auth", auto_error=auto_error)
+
     async def fetch_user(self, identity: str) -> AppUser | None:
         # Resolve user from database repository
         db_user = await user_repo.get_by_username(identity)
         return AppUser.model_validate(db_user) if db_user else None
 ```
+
+### Optional Authentication & Guest Support (`auto_error=False`)
+
+For endpoints that support both authenticated users and anonymous guests (e.g., public catalogs, guest checkouts):
+
+```python
+# main.py
+from zcore.security import get_current_user_stub, get_optional_user_stub
+from auth import CustomAuth
+
+# Standard strict authentication (raises 401 on missing/invalid token)
+strict_auth = CustomAuth(auto_error=True)
+app.dependency_overrides[get_current_user_stub] = strict_auth
+
+# Optional authentication (returns None if unauthenticated)
+optional_auth = CustomAuth(auto_error=False)
+app.dependency_overrides[get_optional_user_stub] = optional_auth
+```
+
+When `auto_error=False`, missing tokens, expired tokens, or inactive accounts return `None` gracefully instead of raising an `AuthError` (401), allowing downstream routes to serve unauthenticated requests while letting `Zchema` prune fields defined in `__private__`.
 
 ---
 
@@ -118,5 +147,5 @@ async def delete_invoice(id: str):
 ```
 
 <Callout type="info" emoji="👑">
-  **Zero-Boilerplate Routing:** When using `BaseRouter`, `HasScopes` dependencies are automatically calculated and injected for every CRUD endpoint based on `model.actions()`.
+  **Zero-Boilerplate Routing:** When using `BaseRouter`, `HasScopes` dependencies are automatically calculated and injected for every CRUD/Lookup endpoint based on `model.actions()`.
 </Callout>

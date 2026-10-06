@@ -1,13 +1,13 @@
 ---
 title: How to build complex search queries
-description: Construct nested AND/OR filters, eager-load relations, use string/range operators, and execute secure dynamic searches.
+description: Construct nested AND/OR/NOT filters, eager-load relations, use inverted/range operators, and execute secure dynamic searches.
 icon: Funnel
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQLAlchemy queries on the fly. It is exposed automatically on the `POST /search` endpoint of any `BaseRouter`.
+ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQLAlchemy queries on the fly. It is exposed automatically on the `POST /search` and `POST /lookup` endpoints of any `BaseRouter`.
 
 <Steps>
   <Step>
@@ -19,19 +19,23 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
     | `gt` / `lt` | Greater Than / Less Than | `100`, `"2026-01-01"` |
     | `ge` / `le` | Greater/Less Than or Equal | `50`, `"2026-08-15"` |
     | `between` | Range check (inclusive `[min, max]`, requires exactly 2 items) | `[10, 50]`, `["2026-01-01", "2026-12-31"]` |
-    | `contains` | Substring match / collection contains | `"invoice"` (searches `%invoice%`) |
-    | `startswith` | String prefix match | `"INV-"` (searches `INV-%`) |
-    | `endswith` | String suffix match | `".pdf"` (searches `%.pdf`) |
-    | `ilike` | Case-insensitive search (auto-escaped) | `"urgent"` (searches `%urgent%`) |
-    | `in` | In a list or set of values | `["pending", "in_progress"]` |
-    | `is_null` | Check for `NULL` / `NOT NULL` | `true` (is null) / `false` (not null) |
-    | `and` / `or` | Logical nesting group | Array of sub-filters in `items` |
+    | `not_between` | Inverted range check (`NOT BETWEEN`) | `[10, 50]` |
+    | `contains` / `not_contains` | Substring match / Negated substring match | `"invoice"` (searches `%invoice%`) |
+    | `startswith` / `not_startswith` | String prefix match / Negated prefix match | `"INV-"` (searches `INV-%`) |
+    | `endswith` / `not_endswith` | String suffix match / Negated suffix match | `".pdf"` (searches `%.pdf`) |
+    | `like` / `not_like` | Case-sensitive pattern / Negated pattern | `"%urgent%"` |
+    | `ilike` / `not_ilike` | Case-insensitive search / Negated search | `"urgent"` (searches `%urgent%`) |
+    | `in` / `not_in` | In a list of values / Not in list | `["pending", "in_progress"]` |
+    | `is_null` | Check for `NULL` | `true` or `null` (is null), `false` (is not null) |
+    | `is_not_null` | Check for `NOT NULL` | `true` or `null` (is not null), `false` (is null) |
+    | `and` / `or` | Logical conjunction / disjunction | Array of sub-filters in `items` |
+    | `not` | Logical negation | Array of sub-filters in `items` or a single `field` |
   </Step>
 
   <Step>
     ### Example Search Payload
 
-    Send a `POST` request to `/tasks/search`:
+    Send a `POST` request to `/tasks/search`. You can paginate using traditional offset parameters (`page`) or pass a Keyset token (`cursor`) for drift-free lookups on large datasets:
 
     ```json
     POST /tasks/search
@@ -43,9 +47,16 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
           "op": "and",
           "items": [
             { "field": "is_completed", "op": "eq", "value": false },
-            { "field": "title", "op": "contains", "value": "urgent" },
+            { "field": "title", "op": "not_contains", "value": "draft" },
             { "field": "priority", "op": "between", "value": [1, 5] },
-            { "field": "code", "op": "startswith", "value": "TSK-" }
+            { "field": "code", "op": "startswith", "value": "TSK-" },
+            { "field": "deleted_at", "op": "is_null", "value": true }
+          ]
+        },
+        {
+          "op": "not",
+          "items": [
+            { "field": "status", "op": "in", "value": ["archived", "cancelled"] }
           ]
         },
         { 
@@ -59,17 +70,22 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
         { "field": "created_at", "order": "desc" }
       ],
       "page": 1,
-      "size": 10
+      "cursor": null,
+      "size": 20
     }
     ```
   </Step>
 
   <Step>
-    ### Configuring Max Search & Relation Depth (`__max_search_depth__`)
+    ### Configuring Max Search Depth & Page Boundaries
 
-    By default, ZCore enforces a **3-level nesting & relation depth limit** to prevent Denial-of-Service (DoS) and infinite recursion query attacks. 
+    ZCore dynamically resolves limits and depth constraints hierarchically:
 
-    If your domain requires deeper relation eager-loading or deeply nested filter trees, set `__max_search_depth__` on your SQLAlchemy model:
+    1. **Search Depth Limit:** Resolved first from the model attribute `__max_search_depth__`, falling back to `settings.SEARCH_MAX_DEPTH` (default: **3**).
+    2. **Pagination Bounds:** The `size` parameter in `SearchRequest` is automatically bounded between `1` and `settings.PAGINATION_MAX_SIZE` (default: **100**), with a fallback to `settings.PAGINATION_DEFAULT_SIZE` (default: **20**).
+    3. **Keyset Cursor Support:** When `cursor` is provided, `SearchEngine` executes keyset comparisons against the model primary key, bypassing table offset scans.
+
+    To allow deeper relation eager-loading or deeply nested filter structures on a specific model:
 
     ```python
     # tasks/models.py
@@ -77,7 +93,7 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
 
     class Task(Base):
         __tablename__ = "tasks"
-        __max_search_depth__ = 5  # <--- Allows up to 5 levels of nested includes/filters
+        __max_search_depth__ = 5  # <--- Overrides settings.SEARCH_MAX_DEPTH for this model
         ...
     ```
   </Step>
@@ -86,8 +102,8 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
 <Callout type="info" emoji="🛡️">
   **Built-In Security & Safeguards:**
   * **Context Shielding:** If the active user has a restricted field in `ctx.restricted_fields` (e.g. `tasks.assignee.email`), any attempt to filter, sort, or include that field immediately raises a `ForbiddenError`.
-  * **SQL Injection & Wildcard Protection:** Wildcard characters like `%` and `_` inside `ilike`, `contains`, `startswith`, and `endswith` queries are automatically escaped.
-  * **Non-String Column Casting:** Text operators (`ilike`, `contains`, `startswith`, `endswith`) applied to non-string columns (such as numbers or UUIDs) are automatically cast to `String` under the hood.
-  * **DoS Defense (Max Depth):** Filter nesting and relation joins (`include`) are strictly bounded by `__max_search_depth__` (default: **3**).
+  * **SQL Injection & Wildcard Protection:** Wildcard characters like `%` and `_` inside `ilike`, `contains`, `startswith`, `endswith`, and their `not_*` counterparts are automatically escaped.
+  * **Non-String Column Casting:** Text operators applied to non-string columns (such as numbers or UUIDs) are automatically cast to `String` under the hood.
+  * **DoS Defense (Max Depth & Size Clamping):** Filter nesting and relation joins (`include`) are strictly bounded by `__max_search_depth__` / `SEARCH_MAX_DEPTH`. Requested page sizes are automatically clamped to `PAGINATION_MAX_SIZE`.
   * **Automatic Type Coercion:** Strings representing numbers (`int`, `float`), ISO timestamps, dates, booleans, and UUIDs (including elements inside `between` ranges and `in` collections) are safely converted to their matching Python column types.
 </Callout>
