@@ -33,7 +33,7 @@ ZCore does not replace FastAPI; it runs alongside it to address common boilerpla
 | **Background Routines** | Manual session management (risks closed session errors) | `@background_task` / `background_scope` with auto-wired DI, session leak warnings, and fresh sessions |
 | **Soft Delete** | Manual query filtering per route | Built-in `SoftDeleteMixin` with timezone-aware timestamps, automatic `scope_query`, atomic batch restore, and `?force=true` query support |
 | **Error Normalization** | Inconsistent error schemas (raw 422 arrays, HTML 500s) | Unified `ResponseWrapper[None]` with Pydantic dot-path sanitization and debug-gated 500 tracebacks via `register_exception_handlers` |
-| **Structured Logging** | Manual configuration | Non-intrusive logging with tri-split loggers (`muted`, `passthrough`, `intercept`), status-aware exception levels (<500 DEBUG), and slow-query tracking |
+| **Structured Logging** | Manual configuration | Non-intrusive logging with tri-split loggers (`muted`, `passthrough`, `intercept`), status-aware exception levels (\<500 DEBUG), and slow-query tracking |
 | **Module Organization** | Undefined (User-driven) | Structured, topologically sorted domain modules (`Plugin`) |
 | **CLI & Scaffolding** | Manual file setup | Interactive TUI (`zc`) with cascading config hierarchy (`CLI > .env > defaults`), transparent Uvicorn passthrough, and multi-DB driver support |
 
