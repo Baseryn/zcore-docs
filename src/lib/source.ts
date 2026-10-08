@@ -1,4 +1,5 @@
 import { loader } from 'fumadocs-core/source';
+import { blog } from '@/lib/blog-source';
 import { lucideIconsPlugin } from 'fumadocs-core/source/lucide-icons';
 import { docsContentRoute, docsImageRoute, docsRoute } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
@@ -49,3 +50,8 @@ export async function getLLMText(page: (typeof source)['$inferPage']) {
 
 ${processed}`;
 }
+
+export const blogSource = loader({
+  baseUrl: '/blog',
+  source: blog.toFumadocsSource(),
+});
