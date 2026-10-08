@@ -1,0 +1,233 @@
+---
+title: "The Repository Pattern in FastAPI: Abstraction or Overengineering?"
+description: When wrapping an ORM makes sense, when it becomes an anti-pattern, and where we drew the boundary.
+date: "2026-10-08"
+author: Ali Alf Ostovar
+authorRole: Creator of ZCore Framework · Baseryn
+readTime: 8 min read
+category: Engineering
+tags: ["FastAPI", "SQLAlchemy 2.0", "Clean Architecture", "Repository Pattern"]
+---
+
+If you search for architectural patterns in modern Python, you will inevitably encounter the Repository pattern. 
+
+On one side, advocates argue that repositories are essential for clean architecture, decoupling business logic from databases, and enabling testability. On the other side, an equally vocal group of engineers argues that placing a repository layer on top of a modern Object-Relational Mapper (ORM) like SQLAlchemy is redundant boilerplate at best—and a harmful anti-pattern at worst.
+
+Both sides have valid points. The issue is rarely whether the Repository pattern is inherently "good" or "bad." The real issue is: **what are you expecting the repository to abstract?**
+
+In this post, we’ll examine both sides of the argument and look at the practical boundaries we established for data access while building and structuring our FastAPI applications.
+
+---
+
+## 1. The Classic Pitch for the Repository Pattern
+
+The textbook case for the Repository pattern stems from Domain-Driven Design (DDD) and Martin Fowler’s enterprise patterns. In a standard FastAPI setup, it is typically presented like this:
+
+```text
+HTTP Request → FastAPI Route Handler → Service Layer → Repository → Database
+```
+
+The arguments in favor are familiar:
+- **Separation of Concerns:** Route handlers shouldn't construct database queries, and service functions shouldn't juggle raw database sessions directly.
+- **Centralized Data Access:** Queries are kept in one place instead of being scattered and copy-pasted across multiple route files.
+- **Testability:** You can mock the repository interface in unit tests without standing up a live database connection.
+
+This sounds reasonable on paper. But in practice, many implementations quickly turn into a maintenance burden.
+
+---
+
+## 2. Why Critics Call It an Anti-Pattern
+
+Critics of the pattern—especially those working with modern ORMs like SQLAlchemy 2.0—point out several legitimate failure modes:
+
+### The "Database Portability" Myth
+The most common justification in introductory tutorials is: *"If you use a repository, you can switch from PostgreSQL to MongoDB tomorrow!"*
+
+In real-world engineering, teams rarely swap relational databases for document stores midway through a project. Even if they do, relational concepts like joins, foreign keys, and atomic multi-table transactions cannot be cleanly abstracted away by a generic interface. Pretending storage engines are interchangeable usually produces an anemic, lowest-common-denominator API.
+
+### Leaky Abstractions & Performance Penalties
+Real applications need eager loading (`selectinload`, `joinedload`), partial column selection (`load_only`), complex joins, and window functions. 
+
+When a repository attempts to hide the ORM entirely, it usually fails in one of two ways:
+1. **God Methods:** You end up writing bespoke methods for every query combination: `get_by_id_with_user_and_orders()`, `get_active_users_page()`, etc.
+2. **Leaking the ORM Anyway:** You pass SQLAlchemy binary expressions or options into the repository—meaning the caller is still coupled to the ORM, defeating the abstraction.
+
+A repository is not automatically a good abstraction simply because it is called a repository.
+
+---
+
+## 3. The Real Problem: What Are You Abstracting?
+
+The breakdown happens when developers treat the repository as a **Storage Engine Replacement**:
+
+```text
+[Bad Abstraction]
+Service → GenericRepository (Tries to hide SQL/ORM) → SQLAlchemy
+```
+
+If your goal is to pretend that SQLAlchemy does not exist, you will fight the ORM at every turn.
+
+Instead, a practical repository should act as an **Application-Level Data Access Boundary**:
+
+```text
+[Useful Abstraction]
+Service → Application Data Boundary → SQLAlchemy 2.0
+```
+
+The goal here is not database independence. The goal is **architectural consistency**.
+
+---
+
+## 4. What We Actually Needed from Data Access
+
+While structuring our application modules, we explicitly decided what we did *not* care about:
+- We did **not** care about switching to MongoDB.
+- We did **not** want to hide SQLAlchemy's query capabilities.
+- We did **not** want anemic interfaces that broke when complex joins were needed.
+
+Instead, we focused on the concrete requirements we encountered:
+1. **Eliminate Repetitive CRUD Boilerplate:** Writing identical query filters, primary-key lookups, and dialect-aware batch operations across multiple domain models was a waste of engineering time.
+2. **Enforce System-Wide Conventions Consistently:** Concerns like soft-deletion (`deleted_at is None`) and model-level query scoping needed to be applied reliably without depending on developers remembering to add `.where(...)` to every query.
+3. **Keep Route Handlers Clean:** Endpoints should handle HTTP mechanics; they should not assemble database queries directly.
+4. **First-Class Eager Loading & Field Pruning:** The repository had to accept execution options (`load_only`, `joinedload`, `selectinload`) natively without awkward workarounds.
+
+---
+
+## 5. A Pragmatic Implementation: Composable Mixins
+
+To achieve this without creating a rigid base class, we divided data access into focused, composable responsibilities using mixins:
+
+```text
+BaseRepository[ModelType]
+├── ReadRepositoryMixin   (Lookups, pagination, existence checks)
+├── WriteRepositoryMixin  (Create, batch inserts, dialect returning, soft-delete)
+└── SearchRepositoryMixin (Structured, policy-checked dynamic queries)
+```
+
+Here is the exact implementation structure we arrived at:
+
+### 1. Base Abstraction & Scoping
+The base class binds the session and model, providing a single query-entrypoint that automatically respects model-level scopes:
+
+```python
+from collections.abc import Sequence
+from typing import Any, Generic, TypeVar
+from sqlalchemy import Select, inspect, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
+from sqlalchemy.orm.interfaces import ExecutableOption
+
+ModelType = TypeVar("ModelType", bound=Any)
+
+class AbstractRepository(Generic[ModelType]):
+    db: AsyncSession
+    model: type[ModelType]
+    pk: Any
+    pk_name: str
+    cursor_field: str
+
+    def _get_base_query(self) -> Select:
+        query = select(self.model)
+        scoper = getattr(self.model, "scope_query", None)
+        if scoper:
+            return scoper(query)
+        return query
+
+    def _apply_filters(self, query: Select, *criterion: Any, **filters: Any) -> Select:
+        if criterion:
+            query = query.where(*criterion)
+        if filters:
+            query = query.filter_by(**filters)
+        return query
+
+    def _supports_soft_delete(self) -> bool:
+        return hasattr(self.model, "deleted_at") and hasattr(self.model, "soft_delete")
+```
+
+### 2. Reading Without Hiding ORM Capabilities
+Notice that `get()` does not attempt to hide SQLAlchemy. It accepts SQLAlchemy `ExecutableOption` instances (such as `joinedload` or `selectinload`) and field lists (`load_only`) directly:
+
+```python
+class ReadRepositoryMixin(AbstractRepository[ModelType]):
+    async def get(
+        self,
+        *criterion: Any,
+        fields: list[Any] | None = None,
+        options: list[ExecutableOption] | None = None,
+        **filters: Any,
+    ) -> ModelType | None:
+        query = self._get_base_query()
+        query = self._apply_filters(query, *criterion, **filters)
+        if fields:
+            query = query.options(load_only(*fields))
+        if options:
+            query = query.options(*options) if isinstance(options, list) else query.options(options)
+        result = await self.db.execute(query)
+        return result.scalars().first()
+```
+
+### 3. Mutations Without Hijacking Transactions
+A common anti-pattern in naive repositories is calling `await session.commit()` inside write methods. This prematurely closes the transaction boundary, preventing the higher-level caller (such as a service layer or transaction manager) from composing multiple repository calls into one atomic operation.
+
+In our write mixin, the repository handles persistence mechanics—it flushes changes to populate IDs, but **never commits the transaction**:
+
+```python
+class WriteRepositoryMixin(Generic[ModelType], AbstractRepository[ModelType]):
+    async def create(self, schema: BaseModel, **extra_data: Any) -> ModelType:
+        data = schema.model_dump()
+        data.update(extra_data)
+        record = self.model(**data)
+        self.db.add(record)
+        await self.db.flush()
+        await self.db.refresh(record)
+        return record
+
+    async def delete(self, target: ModelType | Any, force: bool = False) -> ModelType | None:
+        if isinstance(target, self.model):
+            record = target
+        else:
+            if force:
+                query = select(self.model).where(getattr(self.model, self.pk_name) == target)
+                result = await self.db.execute(query)
+                record = result.scalars().first()
+            else:
+                record = await self.get(**{self.pk_name: target})
+
+            if not record:
+                return None
+
+        if not force and self._supports_soft_delete():
+            record.soft_delete()
+            await self.db.flush()
+            await self.db.refresh(record)
+            return record
+
+        await self.db.delete(record)
+        await self.db.flush()
+        return record
+```
+
+Transaction ownership remains with the caller. The repository issues operations against the session; commit decisions belong at a higher layer.
+
+---
+
+## 6. What This Repository Does NOT Try to Do
+
+To keep the pattern healthy, establishing clear boundaries on what the repository should *avoid* is just as important as what it implements:
+
+1. **It does not replace SQLAlchemy:** We do not define artificial query syntax to hide SQLAlchemy expressions. If a domain query requires an advanced CTE or custom window function, we write SQLAlchemy queries directly.
+2. **It does not promise database portability:** The repository is explicitly designed around relational databases and SQLAlchemy 2.0 semantics.
+3. **It does not own business logic:** Validations, cross-entity coordination, and external side-effects belong in services, not repositories.
+4. **It does not own transactions:** The repository executes operations against the session; it never triggers physical `COMMIT` calls.
+
+---
+
+## 7. So, Is the Repository Pattern an Anti-Pattern?
+
+**Sometimes.**
+
+If you are writing a repository layer solely because an architecture textbook said you must, or if you are wrapping basic ORM calls in an attempt to make PostgreSQL swappable with MongoDB, it is almost certainly an anti-pattern that creates unnecessary indirection.
+
+However, if you treat the repository as a **consistent application data boundary**—one that automates repetitive CRUD mechanics, guarantees scoping and soft-deletion policies, and respects your ORM's native querying power—it brings structure and stability to growing codebases.
+
+In **[ZCore](https://github.com/Baseryn/zcore)**, we designed `BaseRepository` around this exact pragmatic middle ground. It embraces SQLAlchemy instead of fighting it, giving developers a standardized baseline without getting in the way of complex queries.
