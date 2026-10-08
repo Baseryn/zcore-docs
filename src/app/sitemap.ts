@@ -1,5 +1,5 @@
 import { MetadataRoute } from 'next';
-import { source } from '@/lib/source';
+import { blogSource, source } from '@/lib/source';
 
 export const dynamic = 'force-static';
 export const revalidate = false;
@@ -35,5 +35,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.8,
   }));
 
-  return [...staticPages, ...docPages];
+  const blogPages: MetadataRoute.Sitemap = blogSource.getPages().map(
+    (post) => ({
+      url: `${baseUrl}${post.url}`,
+      lastModified: post.data.date ?? new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    }),
+  );
+
+  return [...staticPages, ...docPages, ...blogPages];
 }
