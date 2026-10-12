@@ -46,50 +46,64 @@ export default function BlogPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (
             <Link
               key={post.url}
               href={post.url}
-              className="group relative flex min-h-[280px] flex-col overflow-hidden rounded-2xl border border-fd-border bg-fd-card p-6 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-500/40 hover:shadow-[0_20px_50px_-25px_rgba(16,185,129,0.25)]"
+              className="group relative flex flex-col overflow-hidden rounded-2xl border border-fd-border bg-fd-card transition-all duration-300 hover:-translate-y-1 hover:border-emerald-500/40 hover:shadow-[0_20px_50px_-25px_rgba(16,185,129,0.25)]"
             >
-              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-500 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-10" />
 
-              <div className="flex items-center justify-between">
-                <span className="rounded-full border border-fd-border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider text-fd-muted-foreground">
-                  {post.data.category}
-                </span>
+              {/* Cover / Thumbnail */}
+              {post.data.image && (
+                <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-fd-border bg-fd-muted/20">
+                  <img
+                    src={post.data.image}
+                    alt={post.data.title}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                  />
+                </div>
+              )}
 
-                {post.data.date && (
-                  <time className="text-xs text-fd-muted-foreground">
-                    {new Date(post.data.date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </time>
-                )}
-              </div>
-
-              <div className="mt-8">
-                <h3 className="text-xl font-semibold leading-7 tracking-tight transition-colors group-hover:text-emerald-400">
-                  {post.data.title}
-                </h3>
-
-                {post.data.description && (
-                  <p className="mt-4 line-clamp-4 text-sm leading-6 text-fd-muted-foreground">
-                    {post.data.description}
-                  </p>
-                )}
-              </div>
-
-              <div className="mt-auto pt-8 text-sm font-medium text-emerald-400">
-                <span className="inline-flex items-center gap-2">
-                  Read more
-                  <span className="transition-transform duration-300 group-hover:translate-x-1">
-                    →
+              <div className="flex flex-1 flex-col p-6">
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full border border-fd-border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider text-fd-muted-foreground">
+                    {post.data.category}
                   </span>
-                </span>
+
+                  {post.data.date && (
+                    <time className="text-xs text-fd-muted-foreground">
+                      {new Date(post.data.date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </time>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  <h3 className="text-xl font-semibold leading-7 tracking-tight transition-colors group-hover:text-emerald-400">
+                    {post.data.title}
+                  </h3>
+
+                  {post.data.description && (
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-fd-muted-foreground">
+                      {post.data.description}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-auto pt-6 text-sm font-medium text-emerald-400">
+                  <span className="inline-flex items-center gap-2">
+                    Read more
+                    <span className="transition-transform duration-300 group-hover:translate-x-1">
+                      →
+                    </span>
+                  </span>
+                </div>
               </div>
             </Link>
           ))}
