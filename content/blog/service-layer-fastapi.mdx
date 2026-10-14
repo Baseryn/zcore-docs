@@ -130,7 +130,7 @@ The `create` method orchestrates the entire pipeline. Developers never have to r
 
 ```python
     async def create(self, schema: BaseModel, **extra_data: Any) -> ModelType:
-        # Step A: Run domain pre-flight logic (trusted hook data takes precedence)
+        # Step A: Run domain pre-flight logic; explicit extra_data overrides hook data
         hook_data = await self.pre_create(schema) or {}
         combined_extra = {**hook_data, **extra_data}
 
