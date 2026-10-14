@@ -35,7 +35,7 @@ export default async function BlogPost(props: {
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-10 md:px-8 md:py-10">
       {/* Article Header */}
-      <header className="mb-14">
+      <header className="mb-10">
         <div className="mb-6 flex items-center gap-3">
           <span className="h-px w-8 bg-emerald-500" />
 
@@ -116,6 +116,19 @@ export default async function BlogPost(props: {
           </div>
         )}
       </header>
+
+      {/* Main Cover Banner */}
+      {post.data.image && (
+        <div className="mb-12 overflow-hidden rounded-2xl border border-fd-border bg-fd-muted/20 shadow-lg">
+          <div className="relative aspect-[16/9] md:aspect-[21/9] w-full">
+            <img
+              src={post.data.image}
+              alt={post.data.title}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Divider */}
       <div className="mb-14 h-px bg-gradient-to-r from-emerald-500/40 via-fd-border to-transparent" />
@@ -260,5 +273,16 @@ export async function generateMetadata(props: {
   return {
     title: post.data.title,
     description: post.data.description,
+    openGraph: {
+      title: post.data.title,
+      description: post.data.description,
+      images: post.data.image ? [post.data.image] : undefined,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.data.title,
+      description: post.data.description,
+      images: post.data.image ? [post.data.image] : undefined,
+    },
   };
 }
