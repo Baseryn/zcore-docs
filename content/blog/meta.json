@@ -1,6 +1,7 @@
 {
   "pages": [
     "repository-pattern-fastapi",
-    "service-layer-fastapi"
+    "service-layer-fastapi",
+    "crud-router-fastapi"
   ]
 }
