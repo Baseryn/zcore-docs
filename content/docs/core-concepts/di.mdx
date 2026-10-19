@@ -49,31 +49,44 @@ async def create_task(service: Inject[TaskService]):
 
 ---
 
-## 3. Lifecycle Management
+## 3. Lifecycle Management & Scope Guarding
 
 The `IoCContainer` coordinates three distinct instance lifecycles:
 
 1. **Singleton:** Instantiated once for the entire application lifespan and stored in `container._singletons` (e.g., `EventDispatcher`, `Settings`).
-2. **Scoped:** Instantiated once per ASGI HTTP request and bound to the coroutine context via `ContextVar` (`_scoped_instances`). Managed and automatically purged by `ScopedDependencyMiddleware` after the response is sent (e.g., `AsyncSession`).
+2. **Scoped:** Instantiated once per execution context and bound to the coroutine context via `ContextVar` (`_scoped_instances`). Managed and automatically purged by `ScopedDependencyMiddleware` after the response is sent (e.g., `AsyncSession`).
 3. **Transient:** A fresh, independent instance is created every time `container.resolve()` is executed (e.g., stateless helper utilities).
+
+<Callout type="warn" emoji="🛡️">
+  **Strict Scope Boundary Enforcement:**
+  Attempting to resolve a scoped dependency or `AsyncSession` outside of an active scope context (when `_current_scope_id is None`) immediately raises an explicit `DIException`:
+  ```text
+  DIException: Cannot resolve scoped dependency 'TaskService' outside of an active scope.
+  ```
+  This Fail-Fast mechanism guarantees that database sessions and request-bound instances cannot accidentally leak into singletons, thread pools, or unmanaged background execution paths.
+</Callout>
 
 ---
 
-## 4. Auto-Wiring & Signature Caching
+## 4. Auto-Wiring, Keyword Injection & Signature Caching
 
 Inside your classes and services, you do not need decorators. Declare dependencies in the constructor via standard type hints:
 
 ```python
 class TaskService:
     # ZCore inspects the type hint and resolves TaskRepo automatically
-    def __init__(self, repository: TaskRepo):
+    def __init__(self, repository: TaskRepo, timeout: int = 30, client: Any = None):
         self.repository = repository
+        self.timeout = timeout
+        self.client = client
 ```
 
 When `container.resolve(TaskService)` is invoked:
-1. The container inspects `TaskService.__init__` using `inspect.signature` and `typing.get_type_hints`.
-2. **Signature Caching:** To eliminate the runtime performance overhead of Python reflection, ZCore caches the constructor parameter dependencies in `_dependency_signature_cache` and constructor references in `_constructor_cache`.
-3. Subsequent resolutions bypass reflection completely, reading directly from the warm signature cache to construct instances with near-zero latency.
+
+1. **Inspection & Type Unwrapping (`_unwrap_type`):** ZCore inspects the constructor parameters via `inspect.signature` and `typing.get_type_hints`. It recursively unwraps `Annotated`, `typing.Union`, and Python 3.10+ union types (such as `IService | None = None`) to locate the underlying dependency.
+2. **Default Parameter Handling:** If a constructor parameter declares a default value (`param.default is not empty`) and its type is **not** explicitly registered in the container (such as primitive `int`, `str`, or unregistered optional objects), the container skips auto-wiring for that parameter. Python then safely applies the declared default (e.g. `timeout = 30`). If a dependency is explicitly registered in the container, it takes precedence and is injected.
+3. **Keyword-Based Auto-Wiring (`**kwargs`):** Auto-wiring resolves dependencies into a named dictionary (`resolved_kwargs`) and constructs classes using `target_class(**resolved_kwargs)`. This eliminates argument misplacement when optional/default parameters precede registered ones or when keyword-only parameters are utilized.
+4. **Signature Caching (`_DependencySignature`):** Evaluated constructor parameter maps are cached in `_dependency_signature_cache` using a specialized `_DependencySignature` structure. Subsequent resolutions bypass reflection completely, reading directly from the cache to construct instances with minimal reflection overhead.
 
 ---
 
@@ -106,10 +119,11 @@ ZCore provides two utilities for safe background processing:
 Decorate any asynchronous coroutine or standard synchronous function. The decorator:
 1. Spawns an isolated `background_scope()`.
 2. Automatically allocates a fresh, dedicated `AsyncSession`.
-3. Inspects the function's signature and auto-resolves any missing type-annotated dependencies via `container.resolve()`.
+3. Inspects the function's signature and auto-resolves any missing type-annotated dependencies via `container.resolve()` using `_unwrap_type`.
 4. Executes synchronous functions in a dedicated worker threadpool via `anyio.to_thread.run_sync`.
 
 ```python
+import uuid
 from zcore import background_task
 from tasks.services import TaskService
 

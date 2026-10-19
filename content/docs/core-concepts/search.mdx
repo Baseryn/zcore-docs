@@ -85,6 +85,7 @@ ZCore enforces strict, hierarchical boundaries during the validation sweep:
   
   Exceeding this threshold raises a `ValidationError("Search query filter structure is too complex.")`.
 * **Automatic Page Size Clamping:** The `size` parameter in `SearchRequest` is validated via Pydantic V2 `model_validator(mode="after")`. If omitted, it defaults to `settings.PAGINATION_DEFAULT_SIZE` (default: 20). If specified, it is strictly clamped between `1` and `settings.PAGINATION_MAX_SIZE` (default: 100), preventing massive unbounded database dumps.
+* **Pagination Mutual Exclusivity (Fail-Fast):** `SearchRequest` strictly forbids combining keyset cursor tokens with offset page numbers (`cursor is not empty and page > 1`). Attempting to send both conflicting parameters raises a `422 RequestValidationError` (`Cannot combine 'cursor' with 'page' > 1`), preventing silent parameter drops and frontend state drift.
 
 ---
 
