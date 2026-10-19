@@ -79,7 +79,9 @@ class BaseRepository(
 
 * **Single Target Lookup (`_build_pk_condition`):** Resolves an equality clause whether `target` is a model instance, a dictionary mapping (`{"id": 1, "date": "..."}`), a tuple/list (`(1, "...")`), or a scalar value.
 * **Batch Multi-Key Operations (`_build_ids_condition`):** When executing batch methods (`get_by_ids`, `delete_multi`, `restore_multi`), composite entities compile into standard SQL row-value constructor clauses:
-  $$\big(\text{col}_1, \text{col}_2\big) \in \Big(\big(\text{val}_{1a}, \text{val}_{2a}\big), \big(\text{val}_{1b}, \text{val}_{2b}\big), \dots\Big)$$
+  ```sql
+  (col1, col2) IN ((val1_a, val2_a), (val1_b, val2_b), ...)
+  ```
   This allows database engines (such as PostgreSQL) to execute **Partition Pruning** on partitioned tables (e.g., Range or List partitioning) rather than scanning all physical table partitions.
 
 ---
