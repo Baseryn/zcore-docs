@@ -26,8 +26,8 @@ ZCore does not replace FastAPI; it runs alongside it to address common boilerpla
 |---|---|---|
 | **Underlying Engine** | Standard ASGI Web Framework | Standard ASGI Web Framework + Composable Utilities |
 | **Design Philosophy** | Minimalist, highly explicit | Minimalist, with optional architectural abstractions |
-| **Data Access (CRUD)** | Manual SQL or ORM execution per route | Automated inheritance via `BaseRepository` (with dialect-aware `RETURNING` fallback, soft-delete awareness, restoration, and forced hard-deletes) |
-| **Dependency Injection** | Nested, parameter-level `Depends()` chains | Clean constructor auto-wiring via `Inject[T]` and `IoCContainer` |
+| **Data Access (CRUD)** | Manual SQL or ORM execution per route | Automated inheritance via `BaseRepository` (with composite PK support, dialect-aware `RETURNING` fallback, soft-delete awareness, restoration, and forced hard-deletes) |
+| **Dependency Injection** | Nested, parameter-level `Depends()` chains | Clean constructor auto-wiring via type hints and `IoCContainer`, alongside `Inject[T]` for route endpoints |
 | **Field-Level Security** | Multiple separate Pydantic output schemas | Dynamic, role-based field pruning inside a single `Zchema` |
 | **Transactional Boundaries** | Manual `session.commit()` execution | Context-manager encapsulation via `UnitOfWork` (post-commit events) |
 | **Background Routines** | Manual session management (risks closed session errors) | `@background_task` / `background_scope` with auto-wired DI, session leak warnings, and fresh sessions |
@@ -134,13 +134,14 @@ ZCore does not replace SQLAlchemy; it builds on top of it. However, it is import
 | Query Feature | Standalone SQLAlchemy | ZCore's `BaseRepository` |
 |---|---|---|
 | **Data Retrieval** | `session.execute(select(Model).where(...))` | `repo.get(id=id)` or `repo.get(Model.field == val)` |
-| **Mutations (Update/Delete)** | Requires query execution by primary key | `repo.update()`, `repo.delete(force=...)`, `repo.restore()`, `repo.restore_multi()` (accepts model instance or ID) |
-| **Bulk Insert / Update / Delete** | Manual `insert().values().returning()` setup | `repo.create_multi()`, `repo.update_multi()`, `repo.delete_multi(force=...)` with dialect-aware `RETURNING` fallback |
+| **Mutations (Update/Delete)** | Requires query execution by primary key | `repo.update()`, `repo.delete(force=...)`, `repo.restore()`, `repo.restore_multi()` (accepts model instance, scalar ID, composite tuple, or composite mapping) |
+| **Bulk Insert / Update / Delete** | Manual `insert().values().returning()` setup | `repo.create_multi()`, `repo.update_multi()`, `repo.delete_multi(force=...)` with dialect-aware `RETURNING` fallback and composite batching |
+| **Composite Primary Keys & Partitioning** | Manual `tuple_(*pks).in_(...)` expressions for multi-column batch lookups | Built-in zero-config composite PK detection (`self.pks`, `self.pk_names`), automated `tuple_` queries enabling PostgreSQL partition pruning, and fail-fast guarded properties |
 | **Soft Delete** | Manual filter per query | Inherit `SoftDeleteMixin` for automatic query scoping with timezone support |
-| **Keyset Pagination** | Written manually per query | Built-in via `CursorPagination` and `CursorParams` (Base64 encoded) |
+| **Keyset Pagination** | Written manually per query | Built-in via `CursorPagination` and `CursorParams` with Base64 encoding, dynamic compound sorting (`(col < val) OR (col == val AND pk < last_pk)`), synchronized `SearchRequest.sort` propagation, and driver-safe `Date`/`DateTime` coercion |
 | **Dynamic Search** | Hand-crafted filter parsing | Automated SQL compilation from `SearchRequest` payloads |
 | **Search Operators** | Manual operator translation | Built-in comparisons (`eq`, `gt`, `lt`, `like`), inverted operators (`not_like`, `not_in`, `not_between`, `is_not_null`), and boolean `not` grouping |
-| **Search Security** | Manual validation required | Configurable `__max_search_depth__` and restricted field checking |
+| **Search Security & Integrity** | Manual validation required | Configurable `__max_search_depth__`, restricted field checking, and mutual exclusivity validation rejecting conflicting `cursor` and `page > 1` parameters |
 | **Execution Hooks** | Hand-written or mapped via event listeners | Overridable lifecycle hooks: `pre_create`, `pre_update`, `pre_delete` (with `force`), `pre_restore`, `post_restore` (single & bulk) |
 
 <Callout type="info" emoji="🔄">
