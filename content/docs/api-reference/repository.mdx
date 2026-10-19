@@ -1,13 +1,13 @@
 ---
 title: BaseRepository
-description: Comprehensive API reference for the BaseRepository class, query scoping, bulk operations, soft-delete lifecycles, and restoration methods.
+description: Comprehensive API reference for the BaseRepository class, composite primary keys, query scoping, bulk operations, soft-delete lifecycles, and restoration methods.
 icon: Database
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRepository` provides standard asynchronous database access, combining Read, Write, Bulk Mutation, Soft-Delete Restoration, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions and enforces context security through model-level query scoping.
+`BaseRepository` provides standard asynchronous database access, combining Read, Write, Bulk Mutation, Soft-Delete Restoration, Keyset Pagination, and Search capabilities. It decouples business logic from SQLAlchemy 2.0 sessions, enforces context security through model-level query scoping, and natively supports composite primary keys with database partition pruning.
 
 ## Class Definition
 
@@ -43,21 +43,44 @@ class BaseRepository(
       type: 'type[ModelType]',
       description: 'The SQLAlchemy declarative model class bound to the repository.',
     },
+    pks: {
+      type: 'tuple[Any, ...]',
+      description: 'Tuple of primary key column representations of the bound model.',
+    },
+    pk_names: {
+      type: 'tuple[str, ...]',
+      description: 'Tuple of primary key column name strings (e.g., ("id",) or ("id", "operation_date")).',
+    },
+    is_composite_pk: {
+      type: 'bool',
+      description: 'Boolean flag automatically computed at initialization indicating if the model has a composite primary key (len(pks) > 1).',
+    },
     pk: {
       type: 'Any',
-      description: 'The SQLAlchemy primary key column representation of the bound model.',
+      description: 'Convenience property for single primary key models. Adheres to Fail-Fast: raises AttributeError on composite PK models.',
     },
     pk_name: {
       type: 'str',
-      description: 'The string identifier name of the primary key field (e.g., "id").',
+      description: 'Convenience property returning the single primary key column name. Raises AttributeError on composite PK models.',
     },
     cursor_field: {
       type: 'str',
-      default: 'self.pk_name',
-      description: 'The model field used to coordinate boundary coordinates during keyset cursor pagination.',
+      default: 'self.pk_names[0]',
+      description: 'The model field coordinate used during keyset cursor pagination. Raises AttributeError on composite models unless explicitly configured or sorted.',
     }
   }}
 />
+
+---
+
+## Composite Primary Keys & Partition Pruning
+
+`BaseRepository` inspects all primary key columns defined on the model mapper without hardcoding single-column lookups:
+
+* **Single Target Lookup (`_build_pk_condition`):** Resolves an equality clause whether `target` is a model instance, a dictionary mapping (`{"id": 1, "date": "..."}`), a tuple/list (`(1, "...")`), or a scalar value.
+* **Batch Multi-Key Operations (`_build_ids_condition`):** When executing batch methods (`get_by_ids`, `delete_multi`, `restore_multi`), composite entities compile into standard SQL row-value constructor clauses:
+  $$\big(\text{col}_1, \text{col}_2\big) \in \Big(\big(\text{val}_{1a}, \text{val}_{2a}\big), \big(\text{val}_{1b}, \text{val}_{2b}\big), \dots\Big)$$
+  This allows database engines (such as PostgreSQL) to execute **Partition Pruning** on partitioned tables (e.g., Range or List partitioning) rather than scanning all physical table partitions.
 
 ---
 
@@ -98,7 +121,7 @@ def _supports_soft_delete(self) -> bool:
 
 ### `get`
 
-Fetches a single model instance matching dynamic criteria.
+Fetches a single model instance matching dynamic criteria or primary key conditions.
 
 ```python
 async def get(
@@ -114,7 +137,7 @@ async def get(
   type={{
     '*criterion': {
       type: 'Any',
-      description: 'Positional binary SQLAlchemy filter expressions (e.g., Task.status == "active").',
+      description: 'Positional binary SQLAlchemy filter expressions or composite PK conditions (e.g., repo._build_pk_condition((1, date_val))).',
     },
     fields: {
       type: 'list[Any] | None',
@@ -139,12 +162,12 @@ async def get(
 
 ### `get_by_ids`
 
-Fetches a sequence of records matching a list of primary keys in a single query.
+Fetches a sequence of records matching a list of primary keys in a single query. Supports scalar keys, composite key tuples, dictionary mappings, or model instances.
 
 ```python
 async def get_by_ids(
     self, 
-    ids: list[Any], 
+    ids: Sequence[Any], 
     fields: list[Any] | None = None, 
     options: list[ExecutableOption] | None = None
 ) -> Sequence[ModelType]: ...
@@ -153,8 +176,8 @@ async def get_by_ids(
 <TypeTable
   type={{
     ids: {
-      type: 'list[Any]',
-      description: 'A list of primary key values to retrieve.',
+      type: 'Sequence[Any]',
+      description: 'A list of scalar primary keys, composite tuples (e.g., [(1, d1), (2, d2)]), composite dicts, or model instances.',
     },
     fields: {
       type: 'list[Any] | None',
@@ -175,7 +198,7 @@ async def get_by_ids(
 
 ### `get_list`
 
-Fetches a paginated or complete listing of records.
+Fetches a paginated or complete listing of records. Automatically derives runtime `cursor_field` and `order` parameters if using `CursorParams`.
 
 ```python
 async def get_list(
@@ -222,7 +245,7 @@ async def get_list(
 
 ### `exist`
 
-Checks if records matching the filters exist in the database (automatically applies `scope_query`).
+Checks if records matching the filters exist in the database (automatically applies `scope_query` and checks all composite columns).
 
 ```python
 async def exist(self, *criterion: Any, **filters: Any) -> bool: ...
@@ -331,7 +354,7 @@ async def create_multi(
 
 ### `update`
 
-Updates an existing database record from a model instance or primary key.
+Updates an existing database record from a model instance, scalar primary key, composite tuple, or composite mapping.
 
 ```python
 async def update(
@@ -347,7 +370,7 @@ async def update(
   type={{
     target: {
       type: 'ModelType | Any',
-      description: 'The model instance or primary key identifier of the record to update.',
+      description: 'The model instance, scalar primary key, composite key tuple, or composite dictionary of the record to update.',
     },
     schema: {
       type: 'BaseModel',
@@ -371,7 +394,7 @@ async def update(
 
 ### `update_multi`
 
-Bulk updates multiple database records using DBAPI executemany.
+Bulk updates multiple database records using DBAPI executemany. Validates complete key payloads for both single and composite key entities.
 
 ```python
 async def update_multi(
@@ -386,7 +409,7 @@ async def update_multi(
   type={{
     data: {
       type: 'dict[ModelType | Any, BaseModel]',
-      description: 'A mapping of model instances or primary keys to their update schemas.',
+      description: 'A mapping of model instances, scalar IDs, composite tuples, or composite dicts to their update schemas.',
     },
     partial: {
       type: 'bool',
@@ -407,7 +430,7 @@ async def update_multi(
 
 ### `delete`
 
-Deletes a single record by its model instance or primary key identifier. Automatically applies soft-deletion if supported by the model unless `force=True`.
+Deletes a single record by its model instance, scalar primary key, composite tuple, or composite mapping. Automatically applies soft-deletion if supported unless `force=True`.
 
 ```python
 async def delete(self, target: ModelType | Any, force: bool = False) -> ModelType | None: ...
@@ -417,7 +440,7 @@ async def delete(self, target: ModelType | Any, force: bool = False) -> ModelTyp
   type={{
     target: {
       type: 'ModelType | Any',
-      description: 'The model instance or primary key value of the target record to delete.',
+      description: 'Model instance, scalar primary key, composite tuple, or composite mapping of the target record to delete.',
     },
     force: {
       type: 'bool',
@@ -433,17 +456,17 @@ async def delete(self, target: ModelType | Any, force: bool = False) -> ModelTyp
 
 ### `delete_multi`
 
-Deletes multiple records matching the provided list of primary keys. Automatically executes an atomic soft-delete update (`deleted_at = now()`) unless `force=True`.
+Deletes multiple records matching the provided sequence of primary keys. Automatically executes an atomic soft-delete update (`deleted_at = now()`) unless `force=True`. Supports single and composite entities with partition pruning.
 
 ```python
-async def delete_multi(self, ids: list[Any], force: bool = False) -> Sequence[ModelType]: ...
+async def delete_multi(self, ids: Sequence[Any], force: bool = False) -> Sequence[ModelType]: ...
 ```
 
 <TypeTable
   type={{
     ids: {
-      type: 'list[Any]',
-      description: 'A list of primary key values of records to delete.',
+      type: 'Sequence[Any]',
+      description: 'List of scalar primary keys, composite tuples, composite mappings, or model instances.',
     },
     force: {
       type: 'bool',
@@ -459,7 +482,7 @@ async def delete_multi(self, ids: list[Any], force: bool = False) -> Sequence[Mo
 
 ### `restore`
 
-Restores a previously soft-deleted record by primary key or model instance.
+Restores a previously soft-deleted record by primary key, composite tuple/mapping, or model instance.
 
 ```python
 async def restore(self, target: ModelType | Any) -> ModelType | None: ...
@@ -469,7 +492,7 @@ async def restore(self, target: ModelType | Any) -> ModelType | None: ...
   type={{
     target: {
       type: 'ModelType | Any',
-      description: 'The model instance or primary key value of the soft-deleted record to restore.',
+      description: 'Model instance, scalar primary key, composite tuple, or composite mapping of the soft-deleted record to restore.',
     },
     returns: {
       type: 'ModelType | None',
@@ -480,17 +503,17 @@ async def restore(self, target: ModelType | Any) -> ModelType | None: ...
 
 ### `restore_multi`
 
-Restores multiple soft-deleted records using an atomic batch `UPDATE ... WHERE deleted_at IS NOT NULL` statement with dialect-aware `RETURNING` optimization.
+Restores multiple soft-deleted records using an atomic batch `UPDATE ... WHERE deleted_at IS NOT NULL` statement with dialect-aware `RETURNING` optimization and partition pruning.
 
 ```python
-async def restore_multi(self, ids: list[Any]) -> Sequence[ModelType]: ...
+async def restore_multi(self, ids: Sequence[Any]) -> Sequence[ModelType]: ...
 ```
 
 <TypeTable
   type={{
     ids: {
-      type: 'list[Any]',
-      description: 'A list of primary key values of records to restore.',
+      type: 'Sequence[Any]',
+      description: 'List of scalar primary keys, composite tuples, composite mappings, or model instances to restore.',
     },
     returns: {
       type: 'Sequence[ModelType]',
@@ -505,7 +528,7 @@ async def restore_multi(self, ids: list[Any]) -> Sequence[ModelType]: ...
 
 ### `search`
 
-Dynamically parses and executes a structured `SearchRequest` with automatic security checks, inverted operators, logical negation, column projection, and relation eager-loading.
+Dynamically parses and executes a structured `SearchRequest` with automatic security checks, inverted operators, logical negation, column projection, relation eager-loading, and keyset cursor synchronization.
 
 ```python
 async def search(
@@ -526,7 +549,7 @@ async def search(
     pagination: {
       type: 'PageNumberParams | CursorParams | None',
       default: 'None',
-      description: 'Pagination settings to apply to search results.',
+      description: 'Pagination settings. When using CursorParams, automatically synchronizes the primary sort field and order from search_in.sort.',
     },
     fields: {
       type: 'list[Any] | None',

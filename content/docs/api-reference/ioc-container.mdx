@@ -1,13 +1,13 @@
 ---
 title: IoC Container & Dependency Injection
-description: API reference for ZCore's Inversion of Control container, lifecycle registration methods, and Inject type marker.
+description: API reference for ZCore's Inversion of Control container, lifecycle registration methods, type unwrapping, and Inject type marker.
 icon: Boxes
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-The `IoCContainer` manages class instantiation and lifecycles across your application. It handles registration, constructor auto-wiring via cached reflection signatures, and circular dependency detection across **Singleton**, **Scoped**, and **Transient** lifecycles.
+The `IoCContainer` manages class instantiation and lifecycles across your application. It handles registration, keyword-based constructor auto-wiring via cached reflection signatures, union type unwrapping, and circular dependency detection across **Singleton**, **Scoped**, and **Transient** lifecycles.
 
 ## Class Definition
 
@@ -32,20 +32,50 @@ from zcore import container
 
 ---
 
-## Registration Methods
+## Registration & Inspection Methods
+
+### `is_registered`
+
+Checks whether an interface or class is actively registered across any container lifecycle store (`_singletons`, `_scoped_definitions`, `_factories`), active request scopes (`_scoped_instances`), or represents `AsyncSession`. Automatically unwraps union and annotated types before verification.
+
+```python
+def is_registered(self, interface: type[Any]) -> bool: ...
+```
+
+<TypeTable
+  type={{
+    interface: {
+      type: 'type[Any]',
+      description: 'The interface or class type to inspect.',
+    },
+    returns: {
+      type: 'bool',
+      description: 'True if the interface is registered or active in the current scope, False otherwise.',
+    }
+  }}
+/>
+
+### `_unwrap_type`
+
+A static utility that recursively unwraps `Annotated`, `typing.Union`, and Python 3.10+ union types (`types.UnionType`, such as `IService | None = None`) to locate the underlying concrete dependency type.
+
+```python
+@staticmethod
+def _unwrap_type(annotation: Any) -> Any: ...
+```
 
 ### `register_singleton`
 
 Registers a pre-constructed instance as a shared global singleton.
 
 ```python
-def register_singleton(self, interface: Type[Any], instance: Any) -> None: ...
+def register_singleton(self, interface: type[Any], instance: Any) -> None: ...
 ```
 
 <TypeTable
   type={{
     interface: {
-      type: 'Type[Any]',
+      type: 'type[Any]',
       description: 'The interface or class type key to map against.',
     },
     instance: {
@@ -60,17 +90,17 @@ def register_singleton(self, interface: Type[Any], instance: Any) -> None: ...
 Registers a class bound to a request-scoped lifecycle. The class is instantiated once per context scope (`scope_id`) and cached across the dependency graph for the duration of that request.
 
 ```python
-def register_scoped(self, interface: Type[Any], implementation: Type[Any]) -> None: ...
+def register_scoped(self, interface: type[Any], implementation: type[Any]) -> None: ...
 ```
 
 <TypeTable
   type={{
     interface: {
-      type: 'Type[Any]',
+      type: 'type[Any]',
       description: 'The interface or class type key to map against.',
     },
     implementation: {
-      type: 'Type[Any]',
+      type: 'type[Any]',
       description: 'The target implementation class to auto-wire per request scope.',
     }
   }}
@@ -81,13 +111,13 @@ def register_scoped(self, interface: Type[Any], implementation: Type[Any]) -> No
 Registers a pre-constructed instance directly into the active request scope store.
 
 ```python
-def register_scoped_instance(self, interface: Type[Any], instance: Any) -> None: ...
+def register_scoped_instance(self, interface: type[Any], instance: Any) -> None: ...
 ```
 
 <TypeTable
   type={{
     interface: {
-      type: 'Type[Any]',
+      type: 'type[Any]',
       description: 'The interface or class type key to map against.',
     },
     instance: {
@@ -106,17 +136,17 @@ def register_scoped_instance(self, interface: Type[Any], instance: Any) -> None:
 Registers a class bound to a transient lifecycle. A fresh instance is constructed on every resolution call.
 
 ```python
-def register_transient(self, interface: Type[Any], implementation: Type[Any]) -> None: ...
+def register_transient(self, interface: type[Any], implementation: type[Any]) -> None: ...
 ```
 
 <TypeTable
   type={{
     interface: {
-      type: 'Type[Any]',
+      type: 'type[Any]',
       description: 'The interface or class type key to map against.',
     },
     implementation: {
-      type: 'Type[Any]',
+      type: 'type[Any]',
       description: 'The target implementation class to instantiate fresh on demand.',
     }
   }}
@@ -128,20 +158,20 @@ def register_transient(self, interface: Type[Any], implementation: Type[Any]) ->
 
 ### `resolve`
 
-Dynamically evaluates registered bindings (Singleton, Scoped, Transient) or executes constructor auto-wiring to assemble the dependency tree.
+Dynamically evaluates registered bindings (Singleton, Scoped, Transient) or executes keyword-based constructor auto-wiring to assemble the dependency tree.
 
 ```python
 def resolve(
     self, 
-    interface: Type[T], 
-    _stack: Optional[Set[Type[Any]]] = None
+    interface: type[T], 
+    _stack: set[type[Any]] | None = None
 ) -> T: ...
 ```
 
 <TypeTable
   type={{
     interface: {
-      type: 'Type[T]',
+      type: 'type[T]',
       description: 'The interface or class type to resolve.',
     },
     returns: {
@@ -151,8 +181,20 @@ def resolve(
   }}
 />
 
+<Callout type="warn" emoji="🛡️">
+  **Scope Boundary Enforcement:**
+  Attempting to resolve a scoped dependency or `AsyncSession` outside of an active scope context (when `_current_scope_id is None`) immediately raises `DIException`:
+  ```text
+  DIException: Cannot resolve scoped dependency 'TaskService' outside of an active scope.
+  ```
+</Callout>
+
 <Callout type="info" emoji="⚡">
-  **Constructor Reflection & Signature Caching:** If a type is not explicitly registered, `resolve` analyzes its `__init__` constructor parameters. Evaluated dependencies are cached in `_dependency_signature_cache` to eliminate reflection overhead on subsequent resolutions.
+  **Constructor Auto-Wiring & `_DependencySignature` Caching:**
+  When auto-wiring class constructors:
+  * **Keyword Injection (`**kwargs`):** Dependencies are assembled into a keyword dictionary and injected via `target_class(**resolved_kwargs)`, preventing argument misplacement.
+  * **Default Parameter Bypass:** Parameters declaring default values (`param.default is not empty`) that are not explicitly registered in the container (such as primitive `int`, `str`, or unregistered optional types) are skipped, allowing Python to safely apply their declared defaults.
+  * **Signature Cache:** Evaluated parameter-to-dependency mappings are stored in `_dependency_signature_cache` as list-compatible `_DependencySignature` instances, bypassing reflection overhead on subsequent resolutions.
 </Callout>
 
 ### `clear_scope`
@@ -215,15 +257,16 @@ async def process_report():
 
 ### `background_task`
 
-Decorator that wraps a background task with an isolated `background_scope` and automatically resolves any unprovided type-annotated parameters from the IoC container. Supports both asynchronous coroutines and synchronous functions (executed in a worker threadpool).
+Decorator that wraps a background task with an isolated `background_scope` and automatically resolves any unprovided type-annotated parameters from the IoC container using `_unwrap_type`. Supports both asynchronous coroutines and synchronous functions (executed in a worker threadpool).
 
 ```python
+import uuid
 from zcore import background_task
-from zcore.db.setup import SessionDep
+from tasks.services import TaskService
 
 @background_task
-async def send_welcome_email(user_id: uuid.UUID, email_service: EmailService):
-    await email_service.send(user_id)
+async def send_welcome_email(user_id: uuid.UUID, email_service: TaskService):
+    await email_service.notify(user_id)
 ```
 
 <Callout type="warn" emoji="⚠️">

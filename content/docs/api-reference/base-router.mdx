@@ -1,18 +1,23 @@
 ---
 title: BaseRouter
-description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, and endpoint overrides.
+description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, custom route hooks, and endpoint overrides.
 icon: Network
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRouter` automatically scaffolds 8 standard security-aware CRUD, search, and field-projected lookup endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`) with primary key reflection, dependency injection, and specificity route sorting.
+`BaseRouter` automatically scaffolds 8 standard security-aware CRUD, search, and field-projected lookup endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`) with primary key reflection, dependency injection, auto-bound anti-shadowing hooks, and hierarchical route specificity sorting.
 
 ## Class Definition
 
 ```python
+from typing import Generic, TypeVar
+from pydantic import BaseModel
 from zcore import BaseRouter, RouteKey
+
+CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     def __init__(self) -> None:
@@ -162,6 +167,33 @@ from zcore import RouteKey
 
 ---
 
+## Extension & Lifecycle Hooks
+
+Subclasses can hook into the route registration lifecycle or trigger route sorting on demand:
+
+### `register_custom_routes`
+
+A dedicated lifecycle hook executed at the end of standard route registration before the initial sorting sweep. Subclasses should override this method to attach custom domain endpoints without overriding `__init__`:
+
+```python
+def register_custom_routes(self) -> None:
+    @self.router.get("/summary")
+    async def get_summary():
+        return {"status": "ok"}
+```
+
+### `sort_routes`
+
+A public convenience wrapper that sorts all routes registered on `self.router` using hierarchical path specificity scoring:
+
+```python
+def sort_routes(self) -> None:
+    """Sort routes using hierarchical specificity scoring to avoid path shadowing."""
+    self._sort_routes()
+```
+
+---
+
 ## Dependency Methods
 
 ### `get_route_action`
@@ -229,6 +261,7 @@ async def get_all_endpoint(self, service: BaseService, pagination: Any = None) -
 ```python
 async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper: ...
 ```
+*Automatically synchronizes the primary sort field and order from `search_in.sort[0]` into `CursorParams` when cursor pagination is active.*
 
 ### `lookup_endpoint`
 ```python
@@ -260,6 +293,10 @@ async def delete_endpoint(self, id: Any, service: BaseService, force: bool = Fal
 </Callout>
 
 <Callout type="warn" emoji="🛡️">
-  **Route Specificity Sorting (`_sort_routes`):**
-  `BaseRouter` sorts registered routes using hierarchical specificity scoring. Static path segments (such as `/search` and `/lookup`) are prioritized and evaluated before dynamic parameterized paths (such as `/{id}`), preventing FastAPI route shadowing collisions.
+  **Auto-Sorting & Anti-Shadowing (`_bind_router_sorting_hooks`):**
+  In FastAPI, parameterized routes (such as `/{id:uuid}`) can accidentally intercept static routes (such as `/summary` or `/reports`) if registered earlier, causing `422 RequestValidationError` failures.
+  
+  `BaseRouter` resolves this automatically:
+  1. It sorts routes using hierarchical path specificity scoring so static path segments always precede dynamic parameters.
+  2. In `__init__`, it executes `_bind_router_sorting_hooks()`, wrapping `router.add_api_route` and `router.add_route`. Any custom route registered later (in `register_custom_routes()` or child router constructors) triggers an automatic re-sort, guaranteeing that custom endpoints are never shadowed.
 </Callout>
