@@ -13,7 +13,7 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
   <Step>
     ### 1. Enable Cursor Pagination on the Router
 
-    Open your router file and set `pagination_class = CursorPagination`. This automatically changes the `GET /` endpoint query signature to accept `cursor` and `size`:
+    Open your router file and set `pagination_class = CursorPagination`. This automatically changes the collection endpoint query signature to accept `cursor`, `size`, and runtime keyset parameters:
 
     ```python
     # routers.py
@@ -42,7 +42,7 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
   <Step>
     ### 2. Client Requests
 
-    The client can fetch the first page by simply requesting the desired size, then passing the returned `cursor` for subsequent pages:
+    The client can fetch the first page by requesting the desired size, then passing the returned `cursor` for subsequent pages. Runtime overrides for sort field and direction are also supported:
 
     ```bash
     # Initial request (First page)
@@ -50,7 +50,12 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
 
     # Subsequent request using the received next_cursor
     curl -X GET "http://localhost:8000/tasks/?size=20&cursor=eyJ2YWx1ZSI6ICI...=="
+
+    # Optional: Runtime order override (asc or desc)
+    curl -X GET "http://localhost:8000/tasks/?size=20&order=asc"
     ```
+
+    When executed via `POST /tasks/search`, `BaseRouter` automatically synchronizes the primary sort column from `SearchRequest.sort` into the cursor engine.
   </Step>
 
   <Step>
@@ -70,7 +75,7 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
         }
       ],
       "meta": {
-        "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTA4LTE1VDA4OjAwOjAwIiwgInBrIjogImExYjJjM2Q0Li4uIn0",
+        "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTEwLTE4VDA4OjAwOjAwIiwgInBrIjogImExYjJjM2Q0Li4uIn0",
         "has_more": true,
         "size": 20
       }
@@ -80,6 +85,11 @@ For high-throughput datasets or infinite-scroll feeds, offset pagination causes 
 </Steps>
 
 <Callout type="info" emoji="⚡">
-  **Dynamic Primary Key Inspection:**
-  As of `rc.2`, `CursorPagination()` automatically inspects your model's primary key column (supporting both `uuid.UUID` and `int` primary keys). The cursor token encapsulates `{"value": ..., "pk": ...}` into a URL-safe Base64 token to execute fast indexed lookups (`WHERE col < val`) without scanning rows via `OFFSET`.
+  **Advanced Keyset Engine & Type Coercion:**
+  * **Dynamic PK & Column Inspection:** `CursorPagination` automatically inspects your model's primary key (supporting `uuid.UUID`, `int`, and strings) and supports per-request `cursor_field` and `order` (`asc` or `desc`).
+  * **Compound Boundary Evaluation:** When sorting on non-PK columns, ZCore applies a two-tier keyset predicate to prevent record collisions across identical values:
+    * `DESC`: `(col < val) OR (col == val AND pk < last_pk)`
+    * `ASC`: `(col > val) OR (col == val AND pk > last_pk)`
+  * **Driver-Safe Type Coercion:** Fully coerces ISO strings to SQLAlchemy `Date` (via `sqlalchemy.sql.sqltypes.Date` and date fragment extraction, preventing PostgreSQL `asyncpg` type mismatch errors), `DateTime`, `UUID`, `int`, `float`, and serializes `Decimal` types cleanly into the Base64 token.
+  * **Composite Key Fail-Fast Guard:** On models with composite primary keys, accessing the default `cursor_field` raises an explicit `AttributeError` unless a specific coordinate field is configured on the repository or passed via search sort criteria.
 </Callout>

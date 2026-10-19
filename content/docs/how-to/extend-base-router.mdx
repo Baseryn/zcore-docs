@@ -11,11 +11,11 @@ ZCore's `BaseRouter` scaffolds 8 standard CRUD and search endpoints out of the b
 
 However, enterprise applications often require company-wide shared endpoints across multiple models—such as a **batch status changer (`PATCH /bulk-status`)**, **soft-delete bulk recovery (`POST /bulk-restore`)**, or **data export (`GET /export`)**.
 
-Instead of writing these handlers repeatedly in every domain, you can create a centralized `AppBaseRouter` that extends `BaseRouter` and attaches reusable endpoints across your entire architecture.
+Instead of writing these handlers repeatedly in every domain, you can create a centralized `AppBaseRouter` that extends `BaseRouter` and attaches reusable endpoints across your entire architecture cleanly using the built-in `register_custom_routes()` hook.
 
 <Callout type="info" emoji="💡">
   **Looking for the `/lookup` endpoint?**
-  As of ZCore `v0.1.0-rc.2`, field-projected relational lookups (`POST /lookup`) are **built directly into `BaseRouter`**. You only need to define `lookup_schema = YourLookupSchema` in your router class.
+  Field-projected relational lookups (`POST /lookup`) are **built directly into `BaseRouter`**. You only need to define `lookup_schema = YourLookupSchema` in your router class.
 </Callout>
 
 ---
@@ -46,14 +46,14 @@ Instead of writing these handlers repeatedly in every domain, you can create a c
   <Step>
     ### 2. Create the Custom `AppBaseRouter`
 
-    Create a reusable base class that inherits from `BaseRouter`. Override `_register_routes()`, register your custom route using FastAPI's `add_api_route()`, and invoke `self._sort_routes()` to ensure proper route specificity ordering:
+    Create a reusable base class that inherits from `BaseRouter`. Override the `register_custom_routes()` hook to attach your endpoints. You do **not** need to manually call sorting methods—`BaseRouter` automatically re-sorts routes by path specificity upon registration:
 
     ```python
     # shared/base/router.py
     from typing import Any, Generic, TypeVar
     from fastapi import Depends, status
     from pydantic import BaseModel
-    from zcore import BaseRouter, BaseService, ResponseWrapper
+    from zcore import BaseRouter, BaseService, ResponseWrapper, RouteKey
     from zcore.kernel import Injector
     from shared.schemas import BulkOperationResult, BulkStatusUpdateIn
 
@@ -69,16 +69,13 @@ Instead of writing these handlers repeatedly in every domain, you can create a c
 
         enable_bulk_status: bool = False
 
-        def _register_routes(self) -> None:
-            # 1. Register the standard 8 ZCore CRUD endpoints
-            super()._register_routes()
+        def register_custom_routes(self) -> None:
+            """Lifecycle hook executed at the end of standard route registration."""
+            super().register_custom_routes()
 
-            # 2. Register custom company-wide endpoints conditionally
+            # Attach company-wide endpoints conditionally
             if self.enable_bulk_status:
                 self._register_bulk_status_route()
-
-            # 3. Always sort routes by specificity to prevent path shadowing
-            self._sort_routes()
 
         def _register_bulk_status_route(self) -> None:
             service_callable = self.service
@@ -91,9 +88,9 @@ Instead of writing these handlers repeatedly in every domain, you can create a c
                 return await self.bulk_status_endpoint(payload, service_inst)
 
             # Resolve route action for RBAC permissions (e.g. "tasks:update")
-            action = self.get_route_action("UPDATE") if self.model else ""
+            action = self.get_route_action(RouteKey.UPDATE) if self.model else ""
             dependencies = self._normalize_dependencies(
-                self.get_route_dependencies("UPDATE", action)
+                self.get_route_dependencies(RouteKey.UPDATE, action)
             )
 
             self.router.add_api_route(
@@ -139,7 +136,6 @@ Instead of writing these handlers repeatedly in every domain, you can create a c
 
     ```python
     # tasks/routers.py
-    from zcore import RouteKey
     from shared.base.router import AppBaseRouter
     from .models import Task
     from .schemas import TaskCreate, TaskResponse, TaskUpdate
@@ -196,7 +192,7 @@ Instead of writing these handlers repeatedly in every domain, you can create a c
   </Step>
 </Steps>
 
-<Callout type="warn" emoji="⚖️">
-  **Route Specificity Notice:**
-  Whenever you add static endpoints like `/bulk-status` or `/export`, always call `self._sort_routes()` at the end of `_register_routes()`. ZCore’s specificity sorter guarantees that static paths are evaluated before dynamic primary key patterns (like `/{id}`), preventing route collisions.
+<Callout type="info" emoji="⚡">
+  **Automatic Route Specificity Sorting:**
+  You never have to worry about dynamic parameter patterns (like `/{id}`) shadowing static endpoints like `/bulk-status` or `/export`. `BaseRouter` binds internal hooks that automatically re-sort all routes by path specificity whenever new endpoints are added via `register_custom_routes()` or direct router calls. If manual re-sorting is ever desired, you can also invoke `self.sort_routes()` directly.
 </Callout>
