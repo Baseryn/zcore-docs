@@ -22,7 +22,7 @@ Instead of writing 8 redundant route functions for every model, ZCore's `BaseRou
     from .schemas import TaskCreate, TaskUpdate, TaskResponse
     from .services import TaskService
 
-    class TaskRouter(BaseRouter):
+    class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
         model = Task
         create_schema = TaskCreate
         update_schema = TaskUpdate
@@ -34,9 +34,19 @@ Instead of writing 8 redundant route functions for every model, ZCore's `BaseRou
         
         # Example: Exclude the DELETE endpoint
         exclude = {RouteKey.DELETE}
+
+        # Optional: Add custom domain endpoints without route shadowing
+        def register_custom_routes(self) -> None:
+            @self.router.get("/summary")
+            async def get_task_summary():
+                return {"status": "summary generated"}
     
     router_instance = TaskRouter()
     ```
+
+    <Callout type="info" emoji="⚡">
+      **Auto-Sorting & Anti-Shadowing:** In ZCore, you never need to worry about dynamic path parameters like `/{id:uuid}` shadowing static paths like `/tasks/summary`. `BaseRouter` binds automatic route-sorting hooks so that custom endpoints added via `register_custom_routes()` or after `super().__init__()` are sorted by path specificity, preventing `422 RequestValidationError` mismatches.
+    </Callout>
 
     <Callout type="info" emoji="🗑️">
       **Tip:** When the `DELETE` endpoint is enabled, it automatically supports the `?force=true` query parameter to execute permanent physical hard-deletions when using soft-delete models.
@@ -46,23 +56,42 @@ Instead of writing 8 redundant route functions for every model, ZCore's `BaseRou
   <Step>
     ### Wire the Plugin
 
-    Open `tasks/plugin.py`. The `Plugin` class manages the lifecycle of your domain. Ensure it includes your router:
+    Open `tasks/plugin.py`. The `Plugin` protocol manages the lifecycle of your domain. Ensure it includes your router and implements all asynchronous lifecycle hooks required by the `Kernel`:
 
     ```python
     # tasks/plugin.py
-    from zcore import Plugin
     from fastapi import FastAPI
-    from .routers import TaskRouter
+    from zcore import Plugin
+    from .routers import router_instance
 
     class TaskPlugin(Plugin):
         name = "tasks"
         version = "0.1.0"
-        dependencies = [] # Can list other plugin names if needed
+        dependencies = []  # Can list upstream plugin names if needed
 
         def setup(self, app: FastAPI) -> None:
-            from .routers import router_instance
             app.include_router(router_instance.router)
+
+        async def before_startup(self) -> None:
+            """Executed before core application startup routines."""
+            pass
+
+        async def on_startup(self) -> None:
+            """Executed during application startup."""
+            pass
+
+        async def after_startup(self) -> None:
+            """Executed after application startup concludes."""
+            pass
+
+        async def on_shutdown(self) -> None:
+            """Executed in reverse dependency order during application shutdown."""
+            pass
     ```
+
+    <Callout type="warning" emoji="⚠️">
+      **Lifecycle Contract:** All four asynchronous hooks (`before_startup`, `on_startup`, `after_startup`, `on_shutdown`) are strictly required by the `Plugin` protocol. The `Kernel.lifespan` context manager calls these hooks sequentially based on topological dependency order.
+    </Callout>
   </Step>
 
   <Step>
@@ -80,7 +109,7 @@ Instead of writing 8 redundant route functions for every model, ZCore's `BaseRou
     ```
 
     <Callout type="success" emoji="✅">
-      **Check it out:** Run `zc run` and navigate to `http://127.0.0.1:8000/docs`. You will see 7 fully functional, secure endpoints (POST, GET, GET_ALL, SEARCH, LOOKUP, UPDATE, PATCH) generated automatically!
+      **Check it out:** Run `zc run` and navigate to `http://127.0.0.1:8000/docs`. You will see 7 fully functional, secure endpoints (POST, GET, GET_ALL, SEARCH, LOOKUP, UPDATE, PATCH) plus your custom `/tasks/summary` endpoint generated and sorted automatically!
     </Callout>
   </Step>
 </Steps>
