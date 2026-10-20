@@ -1,19 +1,19 @@
 ---
-title: How to expose dynamic schemas (?schema=true)
-description: Generate frontend form schemas automatically with contextual, role-based field pruning.
+title: How to introspect dynamic schemas (/_schema)
+description: Retrieve frontend form schemas automatically with role-based field pruning and action filtering.
 icon: Braces
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Frontend developers and low-code platforms (like Retool, Appsmith, or JSON Schema form generators) can append `?schema=true` to any ZCore endpoint to fetch its active schema definition.
+Frontend developers and low-code form generators (like Retool, Appsmith, or JSON Schema UI builders) can query the dedicated `/_schema` endpoint on any `BaseRouter` to fetch active, role-pruned schema definitions.
 
 <Steps>
   <Step>
-    ### 1. Enable Dynamic Schemas on the Router
+    ### 1. Router Configuration (Zero-Config)
 
-    Set `expose_schemas = True` globally, or specify a targeted set of `RouteKey` actions:
+    The `/_schema` endpoint is generated automatically on every `BaseRouter`. You can customize its sub-path via `schema_path` or disable it using `exclude`:
 
     ```python
     # routers.py
@@ -30,11 +30,11 @@ Frontend developers and low-code platforms (like Retool, Appsmith, or JSON Schem
         service = TaskService
         prefix = "/tasks"
 
-        # Option A: Enable for all CRUD endpoints
-        expose_schemas = True
+        # Optional: Customize sub-path (Default is "/_schema")
+        # schema_path = "/_schema"
 
-        # Option B: Enable selectively (e.g., only Create & Update forms)
-        # expose_schemas = {RouteKey.POST, RouteKey.UPDATE}
+        # Optional: Disable schema endpoint if not needed
+        # exclude = {RouteKey.SCHEMA}
 
     router_instance = TaskRouter()
     ```
@@ -43,65 +43,46 @@ Frontend developers and low-code platforms (like Retool, Appsmith, or JSON Schem
   <Step>
     ### 2. Request Schema via HTTP
 
-    Append `?schema=true` to the target endpoint:
+    Query the `/_schema` endpoint using `GET`. You can fetch all schemas at once or target a specific operational action using `?action=...`:
 
     ```bash
-    # Fetch Output Display Schema for viewing tasks (GET)
-    curl -X GET "http://localhost:8000/tasks?schema=true"
+    # 1. Fetch all available schemas (create, update, view, lookup)
+    curl -X GET "http://localhost:8000/tasks/_schema"
 
-    # Fetch Input Form Schema for creating a task (POST)
-    curl -X POST "http://localhost:8000/tasks?schema=true"
+    # 2. Fetch specific Input Schema for creation forms
+    curl -X GET "http://localhost:8000/tasks/_schema?action=create"
+
+    # 3. Fetch specific Input Schema for update forms
+    curl -X GET "http://localhost:8000/tasks/_schema?action=update"
+
+    # 4. Fetch specific Output Schema for single/list view
+    curl -X GET "http://localhost:8000/tasks/_schema?action=view"
     ```
   </Step>
 
   <Step>
     ### 3. Real-World Response Structure
 
-    ZCore returns the full Pydantic v2 JSON Schema specification (including `$defs` for nested relations and validation rules). Any restricted field defined in `ctx.restricted_fields` is **automatically pruned** from both `properties` and `required` arrays:
+    ZCore returns the full Pydantic V2 JSON Schema. Any restricted field defined in `ctx.restricted_fields` (or `__private__` for guests) is **automatically pruned** from both `properties` and `required` arrays:
 
     ```json
     {
       "success": true,
-      "message": "Schema generated successfully",
+      "message": "Success",
       "data": {
-        "$defs": {
-          "TaskResponse": {
-            "properties": {
-              "id": { "format": "uuid", "title": "Id", "type": "string" },
-              "title": { "title": "Title", "type": "string" },
-              "is_completed": { "default": false, "title": "Is Completed", "type": "boolean" }
-              // Sensitive fields like 'salary' or 'assignee_email' are pruned automatically!
-            },
-            "required": ["id", "title"],
-            "title": "TaskResponse",
-            "type": "object"
-          }
-        },
         "properties": {
-          "success": { "default": true, "title": "Success", "type": "boolean" },
-          "message": { "default": "Success", "title": "Message", "type": "string" },
-          "data": {
-            "anyOf": [
-              { "items": { "$ref": "#/$defs/TaskResponse" }, "type": "array" },
-              { "type": "null" }
-            ],
-            "default": null,
-            "title": "Data"
-          },
-          "meta": {
-            "anyOf": [
-              { "additionalProperties": true, "type": "object" },
-              { "type": "null" }
-            ],
-            "default": null,
-            "title": "Meta"
-          }
+          "id": { "format": "uuid", "title": "Id", "type": "string" },
+          "title": { "title": "Title", "type": "string" },
+          "is_completed": { "default": false, "title": "Is Completed", "type": "boolean" }
+          // Sensitive fields like 'assignee_email' are pruned automatically!
         },
-        "title": "ResponseWrapper[list[TaskResponse]]",
+        "required": ["id", "title"],
+        "title": "TaskResponse",
         "type": "object"
       },
       "meta": {
-        "restricted_fields": ["tasks.view.salary"]
+        "action": "view",
+        "restricted_fields": ["tasks.view.assignee_email"]
       }
     }
     ```
@@ -109,7 +90,11 @@ Frontend developers and low-code platforms (like Retool, Appsmith, or JSON Schem
 </Steps>
 
 <Callout type="info" emoji="🧠">
-  **Intelligent Method Resolution:**
-  * For `POST`, `PUT`, and `PATCH` requests, ZCore automatically resolves and returns the **Input Body Schema** (`create_schema` / `update_schema`).
-  * For `GET` requests, ZCore resolves and returns the **Output Serialization Schema** (`schema_out`).
+  **Action Parameter Resolution:**
+  * `?action=create`: Resolves and returns the input schema (`create_schema`).
+  * `?action=update`: Resolves and returns the modification schema (`update_schema`).
+  * `?action=view`: Resolves and returns the output serialization schema (`schema_out`).
+  * `?action=lookup`: Resolves and returns the relational projection schema (`lookup_schema`).
+  * Omitted `action`: Returns an object containing all defined schemas keyed by action name (`{"create": {...}, "update": {...}, ...}`).
+  * Non-existent action: Triggers an immediate `400 ValidationError`.
 </Callout>

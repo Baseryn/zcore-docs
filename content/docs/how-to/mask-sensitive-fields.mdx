@@ -56,7 +56,7 @@ Instead of maintaining separate Pydantic models for public, user, and admin view
         model_config = ConfigDict(from_attributes=True)
     ```
 
-    When an unauthenticated request hits the endpoint (`ctx.user_id is None`), ZCore automatically purges these fields from response serialization, input validation, and dynamic OpenAPI schema generation without requiring active context lookups.
+    When an unauthenticated request hits the endpoint (`ctx.user_id is None`), ZCore automatically purges these fields from response serialization, input validation, and dynamic schema introspection (`GET /_schema`) without requiring active context lookups.
   </Step>
 
   <Step>

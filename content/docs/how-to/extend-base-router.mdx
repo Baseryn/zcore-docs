@@ -7,7 +7,7 @@ icon: Network
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore's `BaseRouter` scaffolds 8 standard CRUD and search endpoints out of the box (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`).
+ZCore's `BaseRouter` scaffolds standard CRUD, lookup, and schema introspection endpoints out of the box (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`, and `GET /_schema`).
 
 However, enterprise applications often require company-wide shared endpoints across multiple models—such as a **batch status changer (`PATCH /bulk-status`)**, **soft-delete bulk recovery (`POST /bulk-restore`)**, or **data export (`GET /export`)**.
 
