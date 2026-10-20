@@ -1,13 +1,13 @@
 ---
 title: BaseRouter
-description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, custom route hooks, and endpoint overrides.
+description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, schema introspection, custom route hooks, and endpoint overrides.
 icon: Network
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRouter` automatically scaffolds 8 standard security-aware CRUD, search, and field-projected lookup endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`) with primary key reflection, dependency injection, auto-bound anti-shadowing hooks, and hierarchical route specificity sorting.
+`BaseRouter` automatically scaffolds standard security-aware CRUD, search, lookup, and schema introspection endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`, and `SCHEMA`) with primary key reflection, dependency injection, auto-bound anti-shadowing hooks, and hierarchical route specificity sorting.
 
 ## Class Definition
 
@@ -90,6 +90,11 @@ These attributes configure the scaffolded endpoints in your subclass:
       default: '""',
       description: 'Path prefix representing the router (e.g., "/tasks").',
     },
+    schema_path: {
+      type: 'str',
+      default: '"/_schema"',
+      description: 'Sub-path reserved for resource schema introspection (GET /_schema).',
+    },
     tags: {
       type: 'list[str] | None',
       default: 'None',
@@ -98,7 +103,7 @@ These attributes configure the scaffolded endpoints in your subclass:
     exclude: {
       type: 'set[RouteKey] | None',
       default: 'set()',
-      description: 'Explicit endpoints to omit from route generation (e.g., {RouteKey.DELETE}).',
+      description: 'Explicit endpoints to omit from route generation (e.g., {RouteKey.DELETE, RouteKey.SCHEMA}).',
     },
     pagination_class: {
       type: 'Type[BasePagination] | None',
@@ -108,12 +113,7 @@ These attributes configure the scaffolded endpoints in your subclass:
     route_class: {
       type: 'Type[APIRoute]',
       default: 'ZCoreAPIRoute',
-      description: 'Custom routing processing class supporting ?schema=true and body caching.',
-    },
-    expose_schemas: {
-      type: 'set[RouteKey] | bool',
-      default: 'False',
-      description: 'Exposes target endpoint schemas dynamically via ?schema=true.',
+      description: 'Custom routing processing class supporting action context binding and body caching.',
     }
   }}
 />
@@ -130,6 +130,10 @@ from zcore import RouteKey
 
 <TypeTable
   type={{
+    SCHEMA: {
+      type: '"SCHEMA"',
+      description: 'Role-aware schema introspection endpoint (GET /_schema).',
+    },
     POST: {
       type: '"POST"',
       description: 'Single entity creation endpoint (POST /).',
@@ -198,12 +202,13 @@ def sort_routes(self) -> None:
 
 ### `get_route_action`
 
-Retrieves the database/permission action name for a given route key using `model.actions()`.
+Retrieves the database/permission action name for a given route key using `model.actions()`. Returns an empty string for `RouteKey.SCHEMA`.
 
 ```python
 def get_route_action(self, route_key: RouteKey) -> str: ...
 ```
 
+* `RouteKey.SCHEMA` $\rightarrow$ `""`
 * `RouteKey.POST` $\rightarrow$ `model.actions().CREATE`
 * `RouteKey.GET` $\rightarrow$ `model.actions().VIEW`
 * `RouteKey.GET_ALL` / `RouteKey.SEARCH` $\rightarrow$ `model.actions().LISTVIEW`
@@ -213,7 +218,7 @@ def get_route_action(self, route_key: RouteKey) -> str: ...
 
 ### `get_route_dependencies`
 
-Generates default route dependencies (authentication, authorization, logging, etc.). Subclasses can override this method to inject dynamic, runtime dependencies per operation.
+Generates route dependencies. Defaults to `[get_optional_user_stub]` for `RouteKey.SCHEMA` to support optional authentication and guest masking, and `[HasScopes(action)]` for all standard CRUD and lookup operations.
 
 ```python
 def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]: ...
@@ -223,7 +228,7 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
   type={{
     route_key: {
       type: 'RouteKey',
-      description: 'The target operational route key (e.g., RouteKey.LOOKUP).',
+      description: 'The target operational route key (e.g., RouteKey.LOOKUP, RouteKey.SCHEMA).',
     },
     action: {
       type: 'str',
@@ -231,7 +236,7 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
     },
     returns: {
       type: 'list[Any]',
-      description: 'A list of callables, classes, or FastAPI Depends dependencies. Defaults to [HasScopes(action)].',
+      description: 'A list of callables, classes, or FastAPI Depends dependencies.',
     }
   }}
 />
@@ -241,6 +246,12 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
 ## Overridable Endpoint Handlers
 
 Subclasses can override the core endpoint execution methods to customize response envelopes, inject custom query parameters, or set specialized HTTP status codes:
+
+### `schema_endpoint`
+```python
+async def schema_endpoint(self, action: str | None = None) -> ResponseWrapper: ...
+```
+*Resolves dynamic Pydantic V2 JSON schemas pruned according to active security context. Accepts an optional `action` parameter (`"create"`, `"update"`, `"view"`, `"lookup"`). If omitted, returns a mapping of all configured resource schemas.*
 
 ### `create_endpoint`
 ```python
@@ -294,7 +305,7 @@ async def delete_endpoint(self, id: Any, service: BaseService, force: bool = Fal
 
 <Callout type="warn" emoji="🛡️">
   **Auto-Sorting & Anti-Shadowing (`_bind_router_sorting_hooks`):**
-  In FastAPI, parameterized routes (such as `/{id:uuid}`) can accidentally intercept static routes (such as `/summary` or `/reports`) if registered earlier, causing `422 RequestValidationError` failures.
+  In FastAPI, parameterized routes (such as `/{id:uuid}`) can accidentally intercept static routes (such as `/summary`, `/search`, or `/_schema`) if registered earlier, causing `422 RequestValidationError` failures.
   
   `BaseRouter` resolves this automatically:
   1. It sorts routes using hierarchical path specificity scoring so static path segments always precede dynamic parameters.

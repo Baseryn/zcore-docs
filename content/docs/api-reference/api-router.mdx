@@ -7,7 +7,7 @@ icon: GitBranch
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`ZCoreAPIRoute` extends FastAPI's standard `APIRoute`. It configures routes to use `ZCoreJSONResponse`, intercepts `?schema=true` dynamic schema requests, binds action contexts, and manages HTTP `Vary` caching headers.
+`ZCoreAPIRoute` extends FastAPI's standard `APIRoute`. It configures routes to use `ZCoreJSONResponse`, binds operational action contexts, and manages HTTP `Vary` caching headers for restricted fields.
 
 ## Class Definition
 
@@ -44,9 +44,8 @@ class ZCoreAPIRoute(APIRoute):
 <Callout type="info" emoji="⚙️">
   **Route Execution Pipeline:**
   1. **Unified Response Class Swap:** If `response_class` is standard `JSONResponse`, it is swapped to `ZCoreJSONResponse` to use the unified serialization pipeline (`json_dumps`).
-  2. **Context Action Binding:** Extracts or calculates the action context (e.g., `POST` $\rightarrow$ `"create"`, `GET` $\rightarrow$ `"view"`, `PUT` $\rightarrow$ `"update"`) and binds it via `ctx.set("action", custom_action)`.
-  3. **Dynamic Schema Interception (`?schema=true`):** If `expose_schema=True` and `?schema=true` is present in query parameters, execution skips the endpoint handler, invokes `target_model.model_json_schema()`, and returns the pruned schema wrapped in a `ResponseWrapper`.
-  4. **CDN Cache Protection (`Vary` Header):** If `ctx.restricted_fields` are active on a JSON response, `ZCoreAPIRoute` automatically appends `Vary: Authorization, Cookie` to prevent intermediate proxies or CDN caches from serving masked responses to unrestricted users.
+  2. **Context Action Binding:** Resolves the operational action (from `openapi_extra["action"]` or falling back to HTTP method mapping) and binds it to context via `ctx.set("action", custom_action)`.
+  3. **CDN Cache Protection (`Vary` Header):** If `ctx.restricted_fields` are active on a JSON response, `ZCoreAPIRoute` automatically appends `Vary: Authorization, Cookie` to prevent intermediate proxies or CDN caches from serving masked responses to unrestricted users.
 </Callout>
 
 ---
