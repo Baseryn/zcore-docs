@@ -160,5 +160,5 @@ A balanced architecture means acknowledging that every abstraction carries a cos
 | **`BaseService`** | Requires learning the pre/post-action hook lifecycle. | Your business logic is simple enough to reside cleanly within route controllers. |
 | **`Zchema`** | Requires model metadata configuration and scope mappings. | Your API does not serve different user roles or have field-level visibility constraints. |
 | **`UnitOfWork`** | Introduces context manager encapsulation for database sessions. | Your API writes only to single tables within single requests. |
-| **`BaseRouter`** | Generates 8 standard endpoints which must be configured or excluded. | You only need 1 or 2 specific endpoints for a given model. |
+| **`BaseRouter`** | Generates standard CRUD, lookup, and schema introspection endpoints which must be configured or excluded. | You only need 1 or 2 specific endpoints for a given model. |
 | **`Inject[T]`** | Requires understanding container lifecycles (Singleton, Scoped, Transient). | Standard FastAPI `Depends()` parameters meet your modular requirements. |

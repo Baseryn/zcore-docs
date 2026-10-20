@@ -291,7 +291,7 @@ class TaskPlugin(Plugin):
         pass
 ```
 
-This single class scaffolds 8 secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `POST /search`, `POST /lookup`, `PUT /{id}`, `PATCH /{id}`, and `DELETE /{id}` (with optional `?force=true`).
+This single class scaffolds standard secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `POST /search`, `POST /lookup`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}` (with optional `?force=true`), and `GET /_schema` (role-aware schema introspection).
 
 <Callout type="info" emoji="−">
   **Or don't.** Write standard `@router.get` and `@router.post` handlers inside your `plugin.py` setup method. You get the exact same raw FastAPI performance either way.
@@ -418,7 +418,7 @@ class TaskResponse(Zchema):
     model_config = ConfigDict(from_attributes=True)
 ```
 
-When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and OpenAPI documentation (`?schema=true`). For unauthenticated visitors, fields declared in `__private__` are stripped automatically.
+When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and dynamic schema introspection (`GET /_schema`). For unauthenticated visitors, fields declared in `__private__` are stripped automatically.
 
 <Callout type="info" emoji="−">
   **Or don't.** You are welcome to use standard Pydantic models and define separate response schemas manually.
