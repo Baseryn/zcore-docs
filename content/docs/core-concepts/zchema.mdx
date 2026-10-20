@@ -27,10 +27,10 @@ Maintaining distinct Pydantic models for different user roles (e.g., `TaskCreate
     PruneOut --> JSON[Filtered Response JSON]
     end
 
-    subgraph 3. Documentation
-    Swagger[GET /endpoint?schema=true] --> GetSchema[__get_pydantic_json_schema__]
+    subgraph 3. Schema Introspection
+    Introspect[GET /endpoint/_schema] --> GetSchema[__get_pydantic_json_schema__]
     GetSchema --> PruneDoc[Remove from properties & required]
-    PruneDoc --> SafeSchema[Masked OpenAPI Specification]
+    PruneDoc --> SafeSchema[Masked JSON Schema Specification]
     end"/>
 
 1. **Input Validation (Mass Assignment Prevention):**
@@ -83,18 +83,19 @@ class TaskResponse(Zchema):
 
 ---
 
-## 3. `ZCoreAPIRoute` Integration & CDN Safety
 
-To orchestrate `Zchema` seamlessly with FastAPI, ZCore provides the specialized **`ZCoreAPIRoute`**:
+## 3. Dedicated Schema Introspection (`/_schema`) & CDN Safety
 
-### Fast Dynamic Schema Queries (`?schema=true`)
-When a client requests `GET /tasks?schema=true`:
-1. `ZCoreAPIRoute` intercepts the connection before route handlers or database sessions are invoked.
-2. It executes `target_model.model_json_schema()`, triggering `Zchema`'s masked schema generation.
-3. It returns the pruned JSON Schema wrapped in `ResponseWrapper` directly, bypassing the database entirely.
+To orchestrate `Zchema` seamlessly with routing and caching, ZCore combines `BaseRouter` endpoints with specialized `ZCoreAPIRoute` behaviors:
 
-### Automatic HTTP Cache Invalidation (`Vary` Header)
-If an endpoint returns data where restricted fields have been pruned, `ZCoreAPIRoute` automatically appends:
+### Dedicated Schema Introspection (`GET /_schema`)
+Instead of intercepting arbitrary query parameters, `BaseRouter` exposes a dedicated `GET /_schema` endpoint:
+1. It supports optional authentication via `get_optional_user_stub`, ensuring unauthenticated guests receive schemas with `__private__` fields masked, while authenticated users receive schemas pruned based on their active role scopes.
+2. It accepts an optional `?action=` query parameter (`create`, `update`, `view`, `lookup`).
+3. Under the hood, it executes `target_schema.model_json_schema()` inside an isolated `with ctx.scope(action=normalized_action)` block, guaranteeing that action-scoped restriction rules (e.g. `tasks.create.password`) are evaluated accurately against the target schema.
+
+### Action Context & HTTP Cache Invalidation (`Vary` Header)
+`ZCoreAPIRoute` automatically binds the active operational action to `ctx.action` on every HTTP request. Additionally, if an endpoint returns data where restricted fields have been pruned, `ZCoreAPIRoute` automatically appends:
 
 ```http
 Vary: Authorization, Cookie
