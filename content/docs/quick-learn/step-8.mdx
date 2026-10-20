@@ -1,13 +1,13 @@
 ---
 title: Step 8 - Web Layer & Plugin System
-description: Scaffold 8 secure endpoints instantly and register your domain with the application Kernel.
+description: Scaffold standard secure endpoints (including dynamic search, lookups, and schema introspection) instantly and register your domain with the application Kernel.
 icon: Network
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Instead of writing 8 redundant route functions for every model, ZCore's `BaseRouter` generates them securely out-of-the-box (including dynamic search and field-projected lookups). We then register everything cleanly via the `Plugin` system.
+Instead of writing redundant route functions for every model, ZCore's `BaseRouter` generates standard secure endpoints out-of-the-box (including dynamic search, field-projected lookups, and role-aware schema introspection). We then register everything cleanly via the `Plugin` system.
 
 <Steps>
   <Step>
@@ -109,7 +109,7 @@ Instead of writing 8 redundant route functions for every model, ZCore's `BaseRou
     ```
 
     <Callout type="success" emoji="✅">
-      **Check it out:** Run `zc run` and navigate to `http://127.0.0.1:8000/docs`. You will see 7 fully functional, secure endpoints (POST, GET, GET_ALL, SEARCH, LOOKUP, UPDATE, PATCH) plus your custom `/tasks/summary` endpoint generated and sorted automatically!
+      **Check it out:** Run `zc run` and navigate to `http://127.0.0.1:8000/docs`. You will see 8 fully functional, secure endpoints (POST, GET, GET_ALL, SEARCH, LOOKUP, UPDATE, PATCH, and `GET /_schema`) plus your custom `/tasks/summary` endpoint generated and sorted automatically!
     </Callout>
   </Step>
 </Steps>
