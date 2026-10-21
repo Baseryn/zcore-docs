@@ -119,7 +119,7 @@ ZCore provides structured configuration schemas for the database engine (`Databa
         LOGGING: LoggingSettings = LoggingSettings(
             level="INFO",
             json_format=None,              # None: Console in Debug, JSON in Production
-            log_sql_queries=False,         # Disabled by default in rc.2 to avoid noise
+            log_sql_queries=False,         # Disabled by default to avoid console noise
             slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms (works independently!)
             file_path="./logs/app.log",    # Enables RotatingFileHandler
             max_bytes=20 * 1024 * 1024,    # Rotate when file reaches 20MB (default: 10MB)

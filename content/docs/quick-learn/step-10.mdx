@@ -34,8 +34,8 @@ Testing architectural layers can be tricky. ZCore provides `ZTestClient`, which 
             # Explicitly load the restriction metadata into the request context sandbox
             extra_context={"restricted_fields": ["tasks.view.assignee_email"]}
         ) as client:
-            # 1. Create a task with an assignee_email
-            response = await client.post("/tasks", json={
+            # 1. Create a task with an assignee_email (use trailing slash to match router prefix)
+            response = await client.post("/tasks/", json={
                 "title": "Write Docs",
                 "assignee_email": "secret@example.com"
             })
@@ -44,12 +44,17 @@ Testing architectural layers can be tricky. ZCore provides `ZTestClient`, which 
             
             # 2. Fetch the task
             get_response = await client.get(f"/tasks/{task_id}")
+            assert get_response.status_code == 200
             data = get_response.json()["data"]
             
             # 3. Assertions
-            assert data["title"] == "WRITE DOCS" # pre_create hook worked
-            assert "assignee_email" not in data   # Zchema pruned it!
+            assert data["title"] == "WRITE DOCS"  # pre_create hook worked
+            assert "assignee_email" not in data    # Zchema pruned it!
     ```
+
+    <Callout type="warning" emoji="⚠️">
+      **Trailing Slash Precision:** Always include the trailing slash when hitting the root collection (`POST /tasks/`). Since `BaseRouter` registers the creation endpoint on `path="/"`, requesting `/tasks` without a slash triggers an HTTP `307 Temporary Redirect` in ASGI servers, causing non-redirected test assertions on status code `201` to fail.
+    </Callout>
   </Step>
 
   <Step>
@@ -67,9 +72,10 @@ Testing architectural layers can be tricky. ZCore provides `ZTestClient`, which 
 
     <Callout type="success" emoji="🧪">
       **Automated Test Isolation:**
-      * **DatabaseRollback:** The test inserted a task, but because `ZTestClient` uses a savepoint transaction, the database is rolled back to a clean state after the test. No cleanup needed.
+      * **DatabaseRollback:** The test inserted a task, but because `ZTestClient` uses a savepoint transaction (`create_savepoint`), the database is rolled back to a clean state after the test. No cleanup needed.
       * **UserContext:** The `mock_user_id`, `scopes`, and `restricted_fields` were automatically injected into `ZContext` for the duration of the request.
       * **EventDispatcherSandbox:** Automatically snapshots and restores event subscribers so test events never leak across test cases.
+      * **ContainerSandbox:** Automatically restores the IoC container's singletons, scoped definitions, and transient factories between test runs.
       * **Typed User Models:** You can pass `user_model=AppUser` directly to `ZTestClient` to mock authentic, validated Pydantic user instances.
       * **Zero Mocking Boilerplate:** You didn't have to mock `Depends(get_db)` or override complex service layers. The `ZTestClient` orchestrated the IoC container for you.
     </Callout>

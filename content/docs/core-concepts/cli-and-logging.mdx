@@ -84,7 +84,7 @@ class AppSettings(Settings):
     LOGGING: LoggingSettings = LoggingSettings(
         level="INFO",
         json_format=None,              # None: Console in Debug, JSON in Production
-        log_sql_queries=False,         # Defaults to False in rc.2 to avoid noise
+        log_sql_queries=False,         # Disabled by default to avoid console noise
         slow_query_threshold_ms=200.0, # Log only queries exceeding 200ms (works independently!)
         file_path="./logs/app.log",    # Enables RotatingFileHandler
         max_bytes=10 * 1024 * 1024,    # Rotate when file reaches 10MB (Default: 10MB)

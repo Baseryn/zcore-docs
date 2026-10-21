@@ -1,18 +1,23 @@
 ---
 title: BaseRouter
-description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, and endpoint overrides.
+description: Comprehensive API reference for the BaseRouter class, RouteKey enumeration, lookup projections, schema introspection, custom route hooks, and endpoint overrides.
 icon: Network
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`BaseRouter` automatically scaffolds 8 standard security-aware CRUD, search, and field-projected lookup endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`) with primary key reflection, dependency injection, and specificity route sorting.
+`BaseRouter` automatically scaffolds standard security-aware CRUD, search, lookup, and schema introspection endpoints (`POST`, `GET`, `GET_ALL`, `SEARCH`, `LOOKUP`, `UPDATE`, `PATCH`, `DELETE`, and `SCHEMA`) with primary key reflection, dependency injection, auto-bound anti-shadowing hooks, and hierarchical route specificity sorting.
 
 ## Class Definition
 
 ```python
+from typing import Generic, TypeVar
+from pydantic import BaseModel
 from zcore import BaseRouter, RouteKey
+
+CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     def __init__(self) -> None:
@@ -85,6 +90,11 @@ These attributes configure the scaffolded endpoints in your subclass:
       default: '""',
       description: 'Path prefix representing the router (e.g., "/tasks").',
     },
+    schema_path: {
+      type: 'str',
+      default: '"/_schema"',
+      description: 'Sub-path reserved for resource schema introspection (GET /_schema).',
+    },
     tags: {
       type: 'list[str] | None',
       default: 'None',
@@ -93,7 +103,7 @@ These attributes configure the scaffolded endpoints in your subclass:
     exclude: {
       type: 'set[RouteKey] | None',
       default: 'set()',
-      description: 'Explicit endpoints to omit from route generation (e.g., {RouteKey.DELETE}).',
+      description: 'Explicit endpoints to omit from route generation (e.g., {RouteKey.DELETE, RouteKey.SCHEMA}).',
     },
     pagination_class: {
       type: 'Type[BasePagination] | None',
@@ -103,12 +113,7 @@ These attributes configure the scaffolded endpoints in your subclass:
     route_class: {
       type: 'Type[APIRoute]',
       default: 'ZCoreAPIRoute',
-      description: 'Custom routing processing class supporting ?schema=true and body caching.',
-    },
-    expose_schemas: {
-      type: 'set[RouteKey] | bool',
-      default: 'False',
-      description: 'Exposes target endpoint schemas dynamically via ?schema=true.',
+      description: 'Custom routing processing class supporting action context binding and body caching.',
     }
   }}
 />
@@ -125,6 +130,10 @@ from zcore import RouteKey
 
 <TypeTable
   type={{
+    SCHEMA: {
+      type: '"SCHEMA"',
+      description: 'Role-aware schema introspection endpoint (GET /_schema).',
+    },
     POST: {
       type: '"POST"',
       description: 'Single entity creation endpoint (POST /).',
@@ -162,16 +171,44 @@ from zcore import RouteKey
 
 ---
 
+## Extension & Lifecycle Hooks
+
+Subclasses can hook into the route registration lifecycle or trigger route sorting on demand:
+
+### `register_custom_routes`
+
+A dedicated lifecycle hook executed at the end of standard route registration before the initial sorting sweep. Subclasses should override this method to attach custom domain endpoints without overriding `__init__`:
+
+```python
+def register_custom_routes(self) -> None:
+    @self.router.get("/summary")
+    async def get_summary():
+        return {"status": "ok"}
+```
+
+### `sort_routes`
+
+A public convenience wrapper that sorts all routes registered on `self.router` using hierarchical path specificity scoring:
+
+```python
+def sort_routes(self) -> None:
+    """Sort routes using hierarchical specificity scoring to avoid path shadowing."""
+    self._sort_routes()
+```
+
+---
+
 ## Dependency Methods
 
 ### `get_route_action`
 
-Retrieves the database/permission action name for a given route key using `model.actions()`.
+Retrieves the database/permission action name for a given route key using `model.actions()`. Returns an empty string for `RouteKey.SCHEMA`.
 
 ```python
 def get_route_action(self, route_key: RouteKey) -> str: ...
 ```
 
+* `RouteKey.SCHEMA` $\rightarrow$ `""`
 * `RouteKey.POST` $\rightarrow$ `model.actions().CREATE`
 * `RouteKey.GET` $\rightarrow$ `model.actions().VIEW`
 * `RouteKey.GET_ALL` / `RouteKey.SEARCH` $\rightarrow$ `model.actions().LISTVIEW`
@@ -181,7 +218,7 @@ def get_route_action(self, route_key: RouteKey) -> str: ...
 
 ### `get_route_dependencies`
 
-Generates default route dependencies (authentication, authorization, logging, etc.). Subclasses can override this method to inject dynamic, runtime dependencies per operation.
+Generates route dependencies. Defaults to `[get_optional_user_stub]` for `RouteKey.SCHEMA` to support optional authentication and guest masking, and `[HasScopes(action)]` for all standard CRUD and lookup operations.
 
 ```python
 def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]: ...
@@ -191,7 +228,7 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
   type={{
     route_key: {
       type: 'RouteKey',
-      description: 'The target operational route key (e.g., RouteKey.LOOKUP).',
+      description: 'The target operational route key (e.g., RouteKey.LOOKUP, RouteKey.SCHEMA).',
     },
     action: {
       type: 'str',
@@ -199,7 +236,7 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
     },
     returns: {
       type: 'list[Any]',
-      description: 'A list of callables, classes, or FastAPI Depends dependencies. Defaults to [HasScopes(action)].',
+      description: 'A list of callables, classes, or FastAPI Depends dependencies.',
     }
   }}
 />
@@ -209,6 +246,12 @@ def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
 ## Overridable Endpoint Handlers
 
 Subclasses can override the core endpoint execution methods to customize response envelopes, inject custom query parameters, or set specialized HTTP status codes:
+
+### `schema_endpoint`
+```python
+async def schema_endpoint(self, action: str | None = None) -> ResponseWrapper: ...
+```
+*Resolves dynamic Pydantic V2 JSON schemas pruned according to active security context. Accepts an optional `action` parameter (`"create"`, `"update"`, `"view"`, `"lookup"`). If omitted, returns a mapping of all configured resource schemas.*
 
 ### `create_endpoint`
 ```python
@@ -229,6 +272,7 @@ async def get_all_endpoint(self, service: BaseService, pagination: Any = None) -
 ```python
 async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper: ...
 ```
+*Automatically synchronizes the primary sort field and order from `search_in.sort[0]` into `CursorParams` when cursor pagination is active.*
 
 ### `lookup_endpoint`
 ```python
@@ -260,6 +304,10 @@ async def delete_endpoint(self, id: Any, service: BaseService, force: bool = Fal
 </Callout>
 
 <Callout type="warn" emoji="🛡️">
-  **Route Specificity Sorting (`_sort_routes`):**
-  `BaseRouter` sorts registered routes using hierarchical specificity scoring. Static path segments (such as `/search` and `/lookup`) are prioritized and evaluated before dynamic parameterized paths (such as `/{id}`), preventing FastAPI route shadowing collisions.
+  **Auto-Sorting & Anti-Shadowing (`_bind_router_sorting_hooks`):**
+  In FastAPI, parameterized routes (such as `/{id:uuid}`) can accidentally intercept static routes (such as `/summary`, `/search`, or `/_schema`) if registered earlier, causing `422 RequestValidationError` failures.
+  
+  `BaseRouter` resolves this automatically:
+  1. It sorts routes using hierarchical path specificity scoring so static path segments always precede dynamic parameters.
+  2. In `__init__`, it executes `_bind_router_sorting_hooks()`, wrapping `router.add_api_route` and `router.add_route`. Any custom route registered later (in `register_custom_routes()` or child router constructors) triggers an automatic re-sort, guaranteeing that custom endpoints are never shadowed.
 </Callout>

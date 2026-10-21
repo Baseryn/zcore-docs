@@ -43,8 +43,13 @@ You can supply `target_type=TaskResponse` to `cache.get()`. ZCore automatically 
 task: TaskResponse | None = await cache.get("task_123", target_type=TaskResponse)
 ```
 
-### Background Garbage Collection (`weakref.WeakSet`)
-`TTLLRUCache` instances are registered in a global `weakref.WeakSet`. This allows the background asynchronous eviction loop (`_start_eviction_loop`) to sweep expired keys across all active caches at intervals defined by `settings.CACHE_EVICTION_INTERVAL` without creating circular memory references or preventing clean de-allocation.
+### Thread-Safe Garbage Collection (`weakref.WeakSet` & Double-Checked Locking)
+`TTLLRUCache` instances are registered in a global `weakref.WeakSet`. This allows the background asynchronous eviction loop (`_start_eviction_loop`) to sweep expired keys across all active caches at intervals defined by `settings.CACHE_EVICTION_INTERVAL` without creating circular memory references or preventing clean garbage collection.
+
+To guarantee thread safety across multi-threaded workers (e.g., AnyIO worker threads, background executors, or parallel test suites), task lifecycle management employs the **Double-Checked Locking** pattern via `threading.Lock()`:
+
+* **Task Scheduling (`_ensure_eviction_task`):** Evaluates `_eviction_task is None` before acquiring the module lock, and verifies it again inside the synchronized block. This prevents concurrent execution threads from spawning duplicate background tasks or creating repeated memory sweep loops.
+* **Clean Teardown (`close_cache`):** Atomically extracts and nullifies `_eviction_task` within the lock before awaiting its cancellation, preventing race conditions during graceful application shutdown.
 
 ---
 

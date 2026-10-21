@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: From pip install to running API in 60 seconds. Add ZCore pieces only where they help.
+description: A step-by-step minimal integration walkthrough. Add ZCore pieces only where they help.
 icon: Rocket
 ---
 
@@ -166,6 +166,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastapi import FastAPI
 from zcore import (
     Kernel,
+    __version__,
     db_manager,
     register_db_event_dispatcher,
     register_exception_handlers,
@@ -205,7 +206,7 @@ async def root():
     return {
         "status": "healthy",
         "framework": "ZCore",
-        "version": "0.1.0-rc.2",
+        "version": __version__,
         "debug": settings.DEBUG
     }
 ```
@@ -290,7 +291,7 @@ class TaskPlugin(Plugin):
         pass
 ```
 
-This single class scaffolds 8 secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `POST /search`, `POST /lookup`, `PUT /{id}`, `PATCH /{id}`, and `DELETE /{id}` (with optional `?force=true`).
+This single class scaffolds standard secure endpoints out-of-the-box: `POST /`, `GET /{id}`, `GET /` (with pagination), `POST /search`, `POST /lookup`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}` (with optional `?force=true`), and `GET /_schema` (role-aware schema introspection).
 
 <Callout type="info" emoji="−">
   **Or don't.** Write standard `@router.get` and `@router.post` handlers inside your `plugin.py` setup method. You get the exact same raw FastAPI performance either way.
@@ -335,7 +336,7 @@ class TaskRepository(BaseRepository[Task]):
         super().__init__(model=Task, db=db)
 ```
 
-By simply defining this class, you gain access to async single & bulk CRUD operations (`create_multi`, `update_multi`, `delete_multi`), automatic soft-delete and atomic batch restoration (`restore`, `restore_multi`), forced physical deletions (`force=True`), structured dynamic search filters (`contains`, `between`, `not_in`, inverted operators), and keyset cursor-based pagination.
+By simply defining this class, you gain access to async single & bulk CRUD operations (`create_multi`, `update_multi`, `delete_multi`), native composite primary key support (`pks`, `pk_names`) with PostgreSQL partition pruning, automatic soft-delete and atomic batch restoration (`restore`, `restore_multi`), forced physical deletions (`force=True`), structured dynamic search filters (`contains`, `between`, `not_in`, inverted operators), and keyset cursor-based pagination.
 
 <Callout type="info" emoji="−">
   **No lock-in:** You can bypass the repository at any time and write raw SQLAlchemy query statements directly in your routes whenever complex query logic demands it.
@@ -417,7 +418,7 @@ class TaskResponse(Zchema):
     model_config = ConfigDict(from_attributes=True)
 ```
 
-When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and OpenAPI documentation (`?schema=true`). For unauthenticated visitors, fields declared in `__private__` are stripped automatically.
+When a user logs in, their profile maps restricted fields (e.g., `["tasks.assignee_email"]`) into `ctx.restricted_fields`. `Zchema` automatically intercepts serialization and prunes restricted attributes from responses, input validation, and dynamic schema introspection (`GET /_schema`). For unauthenticated visitors, fields declared in `__private__` are stripped automatically.
 
 <Callout type="info" emoji="−">
   **Or don't.** You are welcome to use standard Pydantic models and define separate response schemas manually.

@@ -49,7 +49,7 @@ ctx.user_id = uuid.uuid4()
 />
 
 <Callout type="info" emoji="💡">
-  **Polymorphic Identity:** As of `rc.2`, `ctx.user_id` no longer enforces strict UUID coercion. It supports arbitrary integer, string, or UUID primary keys without raising type errors.
+  **Polymorphic Identity:** `ctx.user_id` does not enforce strict UUID coercion. It natively supports arbitrary integer, string, or UUID primary keys without raising type errors.
 </Callout>
 
 ### `restricted_fields`
@@ -179,7 +179,7 @@ with ctx.scope(user_id=SYSTEM_UUID, tenant_id="system"):
 Resets the context store to an empty state for the current async task scope. Returns a `contextvars.Token` used for restoring previous state.
 
 ```python
-token: Token[Dict[str, Any]] = ctx.initialize()
+token: Token[dict[str, Any]] = ctx.initialize()
 ```
 
 ### `reset`

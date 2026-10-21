@@ -150,6 +150,11 @@ Comprehensive request model containing dynamic search parameters. Automatically 
 from zcore import SearchRequest
 ```
 
+<Callout type="warn" emoji="🛡️">
+  **Mutual Exclusivity Validation (Fail-Fast):**
+  `SearchRequest` enforces strict pagination integrity. Combining a non-empty `cursor` string with an offset `page > 1` triggers an immediate `ValueError` (`Cannot combine 'cursor' with 'page' > 1`), returning an HTTP `422 RequestValidationError` response envelope.
+</Callout>
+
 <TypeTable
   type={{
     filters: {
@@ -175,12 +180,12 @@ from zcore import SearchRequest
     page: {
       type: 'int',
       default: '1',
-      description: 'The target page offset index (min: 1).',
+      description: 'The target page offset index (min: 1). Cannot be > 1 if cursor is provided.',
     },
     cursor: {
       type: 'str | None',
       default: 'None',
-      description: 'Keyset pagination indicator cursor string.',
+      description: 'Keyset pagination indicator cursor string. Mutually exclusive with page > 1.',
     }
   }}
 />

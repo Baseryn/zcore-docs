@@ -14,14 +14,170 @@ This page documents all notable architectural evolutions, breaking changes, secu
   **Upgrading ZCore:**
   To fetch the latest pre-release build, run:
   ```bash
-  pip install --upgrade "fastapi-zcore-framework[all]==0.1.0rc2"
+  pip install --upgrade "fastapi-zcore-framework[all]==0.1.0rc3"
   ```
 </Callout>
 
 ---
 
-<Accordions type="multiple" defaultValue={['v0.1.0-rc.2']}>
-  <Accordion id="v0.1.0-rc.2" title="v0.1.0-rc.2 (Latest Pre-release) — October 06, 2026 🚀">
+<Accordions type="multiple" defaultValue={['v0.1.0-rc.3']}>
+  <Accordion id="v0.1.0-rc.3" title="v0.1.0-rc.3 (Latest Pre-release) — October 20, 2026 🚀">
+    Welcome to **v0.1.0-rc.3 (Release Candidate 3)** of the ZCore Framework! 🚀
+
+    As we continue advancing through the release candidate evaluation cycle toward the official **v1.0.0 Stable GA**, `v0.1.0-rc.3` delivers significant architectural hardening, strict fail-fast lifecycle enforcement, enterprise database optimizations, and concurrency safety guarantees across the entire framework.
+
+    This release introduces native composite primary key support with PostgreSQL partition pruning; dynamic compound keyset pagination and SQLAlchemy `Date` coercion; a hardened keyword-mapped constructor dependency injection engine supporting `Union` / `Optional` type unwrapping; an automatic anti-shadowing hook system for subclassed routers; a dedicated, context-aware `GET /_schema` introspection endpoint replacing the legacy `?schema=true` query parameter; thread-safe background cache eviction using double-checked locking; and strict mutually exclusive pagination validation.
+
+    ### 🚀 Core Features & Architectural Advancements
+
+    #### 1. 🧩 Native Composite Primary Keys & PostgreSQL Partition Pruning (`BaseRepository`)
+    Previously, `BaseRepository` assumed models possessed a single primary key column (`primary_key[0]`). In `v0.1.0-rc.3`, the data layer natively supports composite primary keys and PostgreSQL table partitioning (e.g., Range/List partitioning across `(id, operation_date)`):
+    * **Tuple-Based Primary Key Reflection:** Replaced single-column attributes with `self.pks = tuple(mapper.primary_key)` and `self.pk_names = tuple(col.name for col in self.pks)`. Automatically sets `self.is_composite_pk = len(self.pks) > 1`.
+    * **Fail-Fast Guarded Properties:** Accessing convenience properties `self.pk`, `self.pk_name`, or `self.cursor_field` on a composite model without an explicit override immediately raises a descriptive `AttributeError`, preventing partial or corrupted queries.
+    * **PostgreSQL Partition Pruning (`tuple_.in_`):** `_build_ids_condition()` dynamically constructs `tuple_(*self.pks).in_(...)` expressions for batch operations. This compiles to native SQL `(col1, col2) IN ((val1, val2), ...)`, enabling the PostgreSQL query planner to perform **Partition Pruning** and eliminate full table scans across partitions.
+    * **Polymorphic Target Resolution (`_build_pk_condition`):** All CRUD operations (`get`, `exist`, `update`, `delete`, `restore`) now accept composite targets as ORM model instances, mapping dictionaries (`{"id": 1, "operation_date": d}`), or exact-length tuples/lists (`(1, d)`), enforcing strict key completeness and rejecting invalid scalars.
+    * **Batch Operations (`update_multi`, `delete_multi`, `restore_multi`):** Fully refactored to validate and assemble multi-column DBAPI payloads without ORM hydration overhead.
+
+    ```python
+    # Models with composite primary keys (e.g., Partitioned Tables)
+    class AuditLog(Base):
+        __tablename__ = "audit_logs"
+        id = Column(Integer, primary_key=True)
+        created_date = Column(Date, primary_key=True)
+        message = Column(String)
+
+    class AuditRepository(BaseRepository[AuditLog]):
+        def __init__(self, db: AsyncSession):
+            super().__init__(AuditLog, db)
+
+    # Single lookup via composite tuple or dict
+    log = await repo.get(repo._build_pk_condition((101, date(2026, 10, 20))))
+
+    # Partition-pruned batch retrieval: (id, created_date) IN ((101, '2026-10-20'), ...)
+    logs = await repo.get_by_ids([(101, date(2026, 10, 20)), (102, date(2026, 10, 20))])
+    ```
+
+    #### 2. ⚡ Dynamic Keyset Pagination & PostgreSQL `Date` Type Coercion (`CursorPagination`)
+    Resolved sorting conflicts between `CursorPagination` and `SearchRequest`, and hardened cursor boundaries for strictly-typed SQL engines:
+    * **Runtime Sort Overrides:** Extended `CursorParams` with optional `cursor_field` and `order` attributes. `BaseRouter.search_endpoint` and `BaseRepository.search` now automatically propagate the primary sort criteria (`SearchRequest.sort[0]`) directly into `CursorPagination`.
+    * **Compound Keyset Ordering:** Keyset pagination now supports arbitrary non-PK sorting columns using compound keyset boundary evaluations:
+      * **DESC:** `(col < val) OR (col == val AND pk < last_pk)`
+      * **ASC:** `(col > val) OR (col == val AND pk > last_pk)`
+      
+      This completely eliminates data collision, record skipping, and duplication across sequential pages. Existing ordering clauses are reset via `query.order_by(None)` before keyset application.
+    * **SQLAlchemy `Date` Column Coercion:** In SQLAlchemy, `Date` does not inherit from `DateTime`. Drivers like `asyncpg` previously raised `DatatypeMismatchError: operator does not exist: date < character varying`. `CursorPagination` now explicitly detects `isinstance(col.type, Date)`, strips optional ISO time fragments via `val.split("T")[0]`, and coerces boundaries using `datetime.date.fromisoformat()`.
+    * **Extended Serialization:** `_encode_cursor` natively serializes `date`, `datetime`, `UUID`, and `Decimal` types to strings.
+
+    #### 3. 🎯 Keyword-Based Constructor Auto-Wiring & Default Fallbacks (`IoCContainer`)
+    Completely overhauled `IoCContainer._auto_wire` to improve reliability, support optional type signatures, and enforce lifecycle boundaries:
+    * **Unregistered Default Skipping:** Constructor parameters defining default values (e.g., `timeout: int = 30` or `client: Any = None`) whose types are not explicitly registered in the container are skipped during dependency collection, allowing Python to fall back safely to the declared default.
+    * **Registration Precedence:** If a dependency type defines a default value *but is explicitly registered* in the container, the container-managed instance takes precedence and is injected.
+    * **Keyword Auto-Wiring (`**kwargs`):** Auto-wiring now constructs class instances using keyword arguments (`**resolved_kwargs`) rather than positional arguments (`*args`). This eliminates parameter misplacement when optional/default parameters precede registered dependencies or when `KEYWORD_ONLY` parameters are used.
+    * **Type Unwrapping (`_unwrap_type`):** Added recursive type normalization for `Annotated`, `typing.Union`, and Python 3.10+ `types.UnionType` (e.g., `IService | None = None`).
+    * **Cache Compatibility (`_DependencySignature`):** Implemented a specialized `list` subclass (`_DependencySignature`) that preserves list-like backward compatibility for test assertions (`assert cache[cls] == [...]`) while internally mapping parameter names to dependency types (`kwargs_map`).
+    * **Strict Scope Boundaries:** Resolving scoped dependencies or `AsyncSession` outside an active scope context (`_current_scope_id is None`) now immediately raises `DIException`.
+
+    #### 4. 🛡️ Subclass Route Auto-Sorting & Anti-Shadowing Hooks (`BaseRouter`)
+    Eliminated route shadowing bugs where custom endpoints registered in `BaseRouter` subclasses were shadowed by dynamic parameterized paths (e.g., `/{id:uuid}` capturing requests intended for `/summary` or `/reports`):
+    * **Dynamic Sorting Hooks (`_bind_router_sorting_hooks`):** Wraps `self.router.add_api_route` and `self.router.add_route` during initialization. Whenever a subclass registers a route (even inside `__init__` after `super().__init__()`), routes are automatically re-sorted based on path specificity.
+    * **Subclass Lifecycle Hook (`register_custom_routes`):** Added a declarative hook method invoked at the tail of `_register_routes()` allowing clean custom endpoint registration without overriding `__init__`.
+    * **Public Sorting Method:** Added `router.sort_routes()` exposing on-demand specificity sorting.
+
+    #### 5. 🔍 Dedicated Schema Introspection Endpoint (`GET /_schema`)
+    Replaced the legacy `?schema=true` query parameter with a dedicated, standardized schema introspection endpoint:
+    * **Endpoint Mapping (`RouteKey.SCHEMA`):** Scaffolds `GET /_schema` (customizable via `schema_path`, defaults to `/_schema`) ranked with high specificity to prevent path capture.
+    * **Action-Specific & Full Resource Introspection:**
+      * `GET /_schema` — Returns all available schemas for the resource (`create`, `update`, `view`, `lookup`).
+      * `GET /_schema?action=create|update|view|lookup` — Returns the targeted JSON schema.
+    * **Security & Context Pruning:** Dynamically evaluates schemas under active request context, pruning fields defined in `ctx.restricted_fields` or `Zchema.__private__`.
+    * **Cleaned Route Handler:** Stripped inline schema generation and reflection logic from `ZCoreAPIRoute`, improving HTTP request execution throughput.
+
+    ```bash
+    # Full resource introspection
+    curl -X GET "http://localhost:8000/api/v1/products/_schema"
+
+    # Action-specific introspection (sensitive fields pruned based on credentials)
+    curl -X GET "http://localhost:8000/api/v1/products/_schema?action=view" \
+         -H "Authorization: Bearer <token>"
+    ```
+
+    #### 6. 🚦 Fail-Fast Pagination Validation (`SearchRequest`)
+    Enforced contract mutual exclusivity between offset pagination and keyset pagination:
+    * **Conflicting Parameter Rejection:** `SearchRequest` now validates that `cursor` and `page > 1` are never submitted simultaneously.
+    * **Strict 422 Response:** If both are supplied, a `ValueError` is raised at the Pydantic validation boundary, returning a standard 422 `RequestValidationError` envelope. Standard single-page requests (`page=1` with `cursor`) remain fully supported.
+
+    #### 7. 🔒 Thread-Safe Cache Eviction Loop (`_eviction_lock`)
+    Resolved a multi-threaded race condition in `zcore.cache.base._ensure_eviction_task`:
+    * **Double-Checked Locking:** Guarded background memory eviction loop instantiation with `_eviction_lock = threading.Lock()`. When multiple threads (e.g., AnyIO worker threads or parallel test harnesses) initialize the cache concurrently, exactly one background asyncio task is spawned.
+    * **Synchronized Teardown:** `close_cache()` atomically extracts and nullifies `_eviction_task` within the lock before awaiting its cancellation, preventing concurrent threads from spawning a new task during shutdown.
+
+    #### 8. 🧪 Testing Harness Hardening & CLI Template Fixes
+    * **Dependency Override State Preservation (`DependencyOverride`):** The testing fixture now snapshots existing overrides in `app.dependency_overrides` during `setUp()` and restores original values in `tearDown()` instead of unconditionally deleting keys.
+    * **CLI Repository Scaffold Fix:** Corrected repository boilerplate generation in `zcore.cli.templates` from `{ModelNameRepository}` to `{ModelName}Repository`.
+    * **Static Version Centralization:** Pinned and exported `__version__ = "0.1.0-rc.3"` in root `zcore.__init__` and synchronized CLI banners, test assertions, and documentation templates.
+    * **Neutral & Technical README Overhaul:** Rewrote framework documentation with objective architectural deep-dives covering Unit of Work, Keyset Pagination, Composite PKs, and the ZShop reference architecture.
+
+    ---
+
+    ### ⚠️ Breaking Changes & Migration Guide
+
+    <Tabs items={['1. Dedicated /_schema Endpoint', '2. Composite Primary Keys', '3. Keyset Pagination Bounds']}>
+      <Tab value="1. Dedicated /_schema Endpoint">
+        Dynamic schema introspection is no longer handled via query parameters on standard CRUD endpoints. Use the dedicated `/_schema` sub-path instead.
+
+        ```bash
+        # Before (v0.1.0-rc.2)
+        GET /tasks/?schema=true
+        GET /tasks/12345?schema=true
+
+        # After (v0.1.0-rc.3)
+        # Fetch all schemas for the resource
+        GET /tasks/_schema
+
+        # Fetch specific action schema
+        GET /tasks/_schema?action=create
+        GET /tasks/_schema?action=view
+        ```
+      </Tab>
+
+      <Tab value="2. Composite Primary Keys">
+        If your model defines a composite primary key, accessing `repo.pk` or `repo.pk_name` now raises an `AttributeError`. Access `repo.pks` and `repo.pk_names` instead.
+
+        ```python
+        # Before (v0.1.0-rc.2) — Silently yielded only the first column on composite models:
+        primary_col = repo.pk
+
+        # After (v0.1.0-rc.3) — Explicit check for composite entities:
+        if repo.is_composite_pk:
+            primary_cols = repo.pks       # tuple of columns
+            col_names = repo.pk_names     # tuple of strings
+        else:
+            primary_col = repo.pk
+        ```
+      </Tab>
+
+      <Tab value="3. Keyset Pagination Bounds">
+        Client requests that previously sent both `cursor` and an offset `page` greater than 1 will now receive an HTTP 422 error. Frontend applications must send either `cursor` (keyset) or `page` (offset), not both.
+
+        ```json
+        // Before (v0.1.0-rc.2) — Invalid in rc.3
+        {
+          "page": 2,
+          "cursor": "eyJ2YWx1ZSI6IDEwfQ==",
+          "size": 20
+        }
+
+        // After (v0.1.0-rc.3) — Choose keyset OR offset
+        {
+          "cursor": "eyJ2YWx1ZSI6IDEwfQ==",
+          "size": 20
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+
+  <Accordion id="v0.1.0-rc.2" title="v0.1.0-rc.2 — October 06, 2026 🚀">
     Welcome to **v0.1.0-rc.2 (Release Candidate 2)** of the ZCore Framework! 🚀
 
     As we approach the final validation phase before tagging our official **v1.0.0 Stable GA**, `v0.1.0-rc.2` focuses on framework-wide error normalization, operational robustness, and developer ergonomic refinements.

@@ -26,7 +26,7 @@ When a model inherits from ZCore's `Base`, it automatically exposes the `.action
   <Step>
     ### 1. Automatic Scoping in `BaseRouter` (Zero-Config)
 
-    By simply declaring `model = Task` on your `BaseRouter`, all 8 standard endpoints are **automatically protected** with their corresponding `HasScopes(...)` rules:
+    By simply declaring `model = Task` on your `BaseRouter`, all standard CRUD and search endpoints are **automatically protected** with their corresponding `HasScopes(...)` rules (while `GET /_schema` uses `get_optional_user_stub` to allow public introspection with automatic `__private__` masking):
 
     ```python
     # routers.py

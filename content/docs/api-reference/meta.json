@@ -2,6 +2,7 @@
   "pages": [
     "repository",
     "search",
+    "pagination",
     "service",
     "uow",
     "base-router",

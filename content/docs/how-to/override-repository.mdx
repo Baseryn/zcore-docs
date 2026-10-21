@@ -43,6 +43,9 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
     ```python
     from sqlalchemy import select, func
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from zcore import BaseRepository
+    from .models import Task
 
     class TaskRepo(BaseRepository[Task]):
         def __init__(self, db: AsyncSession):
@@ -54,6 +57,13 @@ import { Callout } from 'fumadocs-ui/components/callout';
             result = await self.db.execute(query)
             return result.scalar_one()
     ```
+
+    <Callout type="info" emoji="🔑">
+      **Composite Primary Keys (`self.pk` vs. `self.pks`):**
+      * `self.pk` and `self.pk_name` are convenience properties strictly for single-column primary key models.
+      * If your model uses a composite primary key (e.g., `(id, operation_date)` for partitioned tables), `self.is_composite_pk` will be `True`. Accessing `self.pk` on composite models adheres to the **Fail-Fast** design pattern and raises an immediate `AttributeError` to prevent partial-key queries.
+      * For composite models, access `self.pks` (a tuple of column attributes) or `self.pk_names` (a tuple of column name strings), such as `func.count(self.pks[0])`.
+    </Callout>
   </Step>
 </Steps>
 

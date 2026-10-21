@@ -72,7 +72,7 @@ const tools = [
     category: 'independent',
     badge: '🟢 Independent',
     name: 'Inject[T]',
-    oneLine: 'Type-safe constructor dependency injection mapped directly to FastAPI Depends.',
+    oneLine: 'Type-safe route dependency injection mapped directly to FastAPI Depends.',
     code: `@router.get("/tasks")
 async def list_tasks(service: Inject[TaskService]):
     return await service.get_list()`,
@@ -123,7 +123,7 @@ async def handle(payload):
     category: 'independent',
     badge: '🟢 Independent',
     name: 'BaseRepository',
-    oneLine: 'Async CRUD, soft-delete restoration (restore/restore_multi), forced deletes, and keyset pagination.',
+    oneLine: 'Async CRUD, composite PKs with partition pruning, soft-delete restoration, and keyset pagination.',
     code: `class TaskRepo(BaseRepository[Task]):
     def __init__(self, db: AsyncSession):
         super().__init__(Task, db)`,
@@ -172,7 +172,7 @@ query = engine.build_query(req)`,
     category: 'orchestrated',
     badge: '🔴 Orchestrated',
     name: 'BaseRouter',
-    oneLine: 'Generates 8 secure endpoints (including field-projected POST /lookup) with specificity sorting.',
+    oneLine: 'Generates standard secure endpoints (including field-projected lookups and /_schema) with specificity sorting.',
     code: `class TaskRouter(BaseRouter[TaskCreate, TaskUpdate]):
     model = Task
     create_schema = TaskCreate
@@ -180,7 +180,7 @@ query = engine.build_query(req)`,
     schema_out = TaskResponse
     lookup_schema = TaskResponse
     service = TaskService`,
-    without: '8 redundant endpoint functions',
+    without: 'Redundant route controller boilerplate',
   },
   {
     category: 'orchestrated',
@@ -270,8 +270,8 @@ export default function HomePage() {
           </h1>
 
           <p className="text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed mb-10 max-w-2xl">
-            A pragmatically engineered architectural framework by <span className="font-semibold text-zinc-900 dark:text-zinc-100">Baseryn</span> built on top of FastAPI.
-            Absolute freedom. No rigid constraints. Use only what you need, and override everything else.
+            A pragmatically engineered architectural framework by <a href="https://baseryn.com" target="_blank" rel="noopener noreferrer" className="font-semibold text-zinc-900 dark:text-zinc-100">Baseryn</a> built on top of FastAPI.
+            Composable architectural patterns without rigid constraints. Adopt only what you need, and override the rest.
           </p>
 
           <div className="flex flex-wrap justify-center gap-4">
@@ -348,7 +348,7 @@ export default function HomePage() {
 
             <div className="px-6 py-4 border-t border-zinc-900 bg-emerald-500/5 flex items-center gap-3">
               <CheckIcon />
-              <span className="text-xs text-emerald-400 font-semibold">Async methods, pagination, soft-delete restoration, and policy-guarded search — out of the box.</span>
+              <span className="text-xs text-emerald-400 font-semibold">Async methods, composite primary keys, soft-delete restoration, and policy-guarded search — out of the box.</span>
             </div>
           </div>
 
@@ -508,14 +508,14 @@ export default function HomePage() {
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">session.commit() blocks</td>
                 </tr>
                 <tr className="bg-white/40 dark:bg-zinc-950/30">
-                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Scaffold all 8 CRUD &amp; lookup endpoints without route boilerplate</td>
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Scaffold standard CRUD, lookup, and schema endpoints without route boilerplate</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">BaseRouter</td>
                   <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Individual route functions</td>
                 </tr>
                 <tr className="bg-zinc-50/40 dark:bg-zinc-950/20">
-                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Auto-wire repositories into services elegantly</td>
+                  <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Inject container-managed dependencies into FastAPI routes</td>
                   <td className="px-6 py-4 text-emerald-600 dark:text-emerald-400 font-medium font-mono">Inject[T]</td>
-                  <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Depends() parameters</td>
+                  <td className="px-6 py-4 text-zinc-400 dark:text-zinc-500">Nested Depends() parameter chains</td>
                 </tr>
                 <tr className="bg-white/40 dark:bg-zinc-950/30">
                   <td className="px-6 py-4 text-zinc-800 dark:text-zinc-300">Execute background jobs with clean IoC &amp; DB session isolation</td>
@@ -592,13 +592,13 @@ export default function HomePage() {
               <div className="absolute top-4 right-4 text-zinc-600">
                 <TerminalIcon />
               </div>
-              <div><span className="text-zinc-600">$</span> curl http://localhost:8000/tasks?schema=true</div>
+              <div><span className="text-zinc-600">$</span> curl http://localhost:8000/tasks/_schema?action=view</div>
               <br />
               <div className="text-zinc-500"># Response JSON dynamically pruned according to requester scope:</div>
               <div className="text-emerald-400">{`{`}</div>
               <div className="text-emerald-400 pl-4">{`"success": true,`}</div>
               <div className="text-emerald-400 pl-4">{`"data": {`}</div>
-              <div className="text-emerald-400 pl-8">{`"title": "tasks",`}</div>
+              <div className="text-emerald-400 pl-8">{`"title": "TaskResponse",`}</div>
               <div className="text-emerald-400 pl-8">{`"properties": {`}</div>
               <div className="text-emerald-400 pl-12">{`"id": { "type": "string" },`}</div>
               <div className="text-emerald-400 pl-12">{`"title": { "type": "string" }`}</div>
@@ -612,14 +612,14 @@ export default function HomePage() {
               <h2 className="text-3xl font-bold tracking-tight mb-4">
                 Real-Time UI Generation
                 <br />
-                with <code className="text-emerald-600 dark:text-emerald-400 font-mono text-2xl bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">?schema=true</code>
+                with <code className="text-emerald-600 dark:text-emerald-400 font-mono text-2xl bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">/_schema</code>
               </h2>
               <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed mb-6">
-                Avoid hardcoding your frontend forms. When appending <code className="text-zinc-700 dark:text-zinc-300 bg-zinc-200/50 dark:bg-zinc-800/60 px-1 py-0.5 rounded font-mono text-xs">?schema=true</code> to any ZCore route, the framework intercepts the request, dynamically inspects the authenticated user&apos;s permissions, prunes forbidden attributes, and yields the secure, tailored JSON Schema representation in real-time.
+                Avoid hardcoding your frontend forms. By querying the <code className="text-zinc-700 dark:text-zinc-300 bg-zinc-200/50 dark:bg-zinc-800/60 px-1 py-0.5 rounded font-mono text-xs">/_schema</code> endpoint on any ZCore router, the framework dynamically inspects the authenticated user&apos;s permissions, prunes forbidden attributes, and yields the secure, tailored JSON Schema representation in real-time.
               </p>
               <div className="space-y-2.5 text-sm text-zinc-700 dark:text-zinc-300">
                 <div className="flex items-start gap-2"><CheckIcon /> <span>Directly build automated forms on Retool, Appsmith, or custom admin panels.</span></div>
-                <div className="flex items-start gap-2"><CheckIcon /> <span>Eliminates data models mismatch between client and server fields.</span></div>
+                <div className="flex items-start gap-2"><CheckIcon /> <span>Fetch all resource schemas at once or target specific actions (<code className="text-xs font-mono">?action=create|view</code>).</span></div>
                 <div className="flex items-start gap-2"><CheckIcon /> <span>Outputs metadata including restricted paths active in the user context.</span></div>
               </div>
             </div>
@@ -690,6 +690,7 @@ export default function HomePage() {
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseRepository</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300 font-mono">
                 <div className="flex items-center gap-2"><CheckIcon /> <span>create / create_multi</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span>composite keys (self.pks)</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span>update_multi</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span>restore / restore_multi</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span>delete(force=True)</span></div>
@@ -713,9 +714,10 @@ export default function HomePage() {
               <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400/80 mb-3">BaseRouter</div>
               <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
                 <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Override create_endpoint, lookup_endpoint, etc.</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Add custom routes directly to router.router</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">register_custom_routes hook</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Auto-sorted routes (anti-shadowing)</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Select active endpoints via RouteKey</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Dynamic query schema exports (?schema=true)</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /> <span className="text-xs font-mono">Role-aware schema introspection (GET /_schema)</span></div>
                 <div className="flex items-center gap-2 text-zinc-400 dark:text-zinc-500"><MinusIcon /> <span className="text-xs font-sans">Optionally bypass router entirely</span></div>
               </div>
             </div>
@@ -747,7 +749,7 @@ export default function HomePage() {
           </div>
 
           <p className='text-zinc-500 text-sm mt-8 max-w-md mx-auto'>
-            Created by <span className="font-semibold text-zinc-800 dark:text-zinc-200">Baseryn</span>.
+            Created by <a href="https://baseryn.com" target="_blank" rel="noopener noreferrer" className="font-semibold text-zinc-800 dark:text-zinc-200">Baseryn</a>.
           </p>
 
           <div className="mt-4 flex justify-center items-center gap-3 text-[11px] text-zinc-400 dark:text-zinc-600 font-mono">

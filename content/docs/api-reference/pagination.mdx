@@ -7,7 +7,7 @@ icon: ListOrdered
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-ZCore provides two distinct pagination engines for relational SQLAlchemy queries: **`PageNumberPagination`** (offset-based with optional total count queries) and **`CursorPagination`** (keyset-based with URL-safe Base64 coordinate tokens and dynamic primary key inspection).
+ZCore provides two distinct pagination engines for relational SQLAlchemy queries: **`PageNumberPagination`** (offset-based with optional total count queries) and **`CursorPagination`** (keyset-based with URL-safe Base64 coordinate tokens, dynamic primary key inspection, and synchronized compound sorting).
 
 ## Module Imports
 
@@ -46,7 +46,7 @@ class PaginatedResult(Generic[T]):
     },
     meta: {
       type: 'dict[str, Any]',
-      description: 'Structural pagination metadata (e.g., page, total_pages, next_cursor, has_more).',
+      description: 'Structural pagination metadata (e.g., page, total_pages, next_cursor, has_more, size).',
     }
   }}
 />
@@ -100,12 +100,14 @@ class PageNumberParams(BaseModel):
 
 ### `CursorParams`
 
-Pydantic V2 schema validating query parameters for keyset-based cursor pagination.
+Pydantic V2 schema validating query parameters for keyset-based cursor pagination. Supports runtime coordinate field and direction overrides.
 
 ```python
 class CursorParams(BaseModel):
     cursor: str | None = None
     size: int | None = None
+    cursor_field: str | None = None
+    order: Literal["asc", "desc"] | str | None = None
 ```
 
 <TypeTable
@@ -119,6 +121,16 @@ class CursorParams(BaseModel):
       type: 'int | None',
       default: 'settings.PAGINATION_DEFAULT_SIZE (20)',
       description: 'Maximum records per dataset. Clamped to settings.PAGINATION_MAX_SIZE (100).',
+    },
+    cursor_field: {
+      type: 'str | None',
+      default: 'None',
+      description: 'Runtime model attribute used as coordinate. If None, falls back to paginator cursor_field or primary key.',
+    },
+    order: {
+      type: 'Literal["asc", "desc"] | str | None',
+      default: 'None',
+      description: 'Runtime traversal direction. If None, falls back to paginator order (default: "desc").',
     }
   }}
 />
@@ -200,23 +212,32 @@ class CursorPagination(BasePagination[T]):
     order: {
       type: 'str',
       default: '"desc"',
-      description: 'Sorting direction ("asc" or "desc").',
+      description: 'Default sorting direction ("asc" or "desc"). Overridable via CursorParams.order.',
     }
   }}
 />
 
-#### Dynamic Primary Key Inspection & Tie-Breaking
-When paginating by non-unique fields (e.g. `created_at`), duplicate timestamps can cause missing records. `CursorPagination` automatically pairs the coordinate field with the model's primary key (`pk`):
+#### Dynamic Compound Keyset Evaluation & Tie-Breaking
+When paginating by non-unique fields (e.g. `operation_date` or `priority`), duplicate values can cause missed records. `CursorPagination` pairs the coordinate field with the model's primary key (`pk_col`) for tie-breaking:
 
 * **Desc Order:** `WHERE (col < val) OR (col == val AND pk < last_pk)`
 * **Asc Order:** `WHERE (col > val) OR (col == val AND pk > last_pk)`
 
-The cursor string is an opaque, URL-safe Base64 token encoding `{"value": ..., "pk": ...}`. Type coercion safely handles datetime ISO strings, integer IDs, and UUID instances automatically.
+Before applying keyset ordering, `CursorPagination` resets any conflicting sorting via `query = query.order_by(None)` and applies compound `ORDER BY` clauses:
+* `query.order_by(col.desc(), pk_col.desc())` (or `.asc()`).
+
+#### Type Coercion & PostgreSQL Driver Safety
+The cursor string is an opaque, URL-safe Base64 token encoding `{"value": ..., "pk": ...}`:
+* **Serialization (`_encode_cursor`):** Automatically converts `datetime` (UTC ISO formatted), `date` (`isoformat()`), `uuid.UUID`, and `Decimal` (string converted) instances safely into the JSON payload.
+* **Deserialization & Driver Coercion:** Inspects the SQLAlchemy column type (`python_type` and `isinstance(col.type, Date | DateTime)`). Converts ISO strings to `datetime.date` (stripping time components via `val.split("T")[0]`), resolving driver-level mismatches (`DatatypeMismatchError`) in strictly typed drivers like `asyncpg`. Automatically coerces `uuid.UUID`, `int`, and `float`.
+
+#### Fail-Fast on Composite Primary Keys
+On composite primary key models (`self.is_composite_pk is True`), keyset pagination requires an explicit single coordinate column. Accessing `cursor_field` without an explicit field configuration on the repository or search request raises an `AttributeError`.
 
 #### Generated `meta` Structure
 ```json
 {
-  "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTA4LTE1VDA4OjAwOjAwIiwgInBrIjogImExYjJjM2Q0Li4uIn0",
+  "next_cursor": "eyJ2YWx1ZSI6ICIyMDI2LTEwLTE4VDA4OjAwOjAwIiwgInBrIjogImExYjJjM2Q0Li4uIn0",
   "has_more": true,
   "size": 20
 }
@@ -240,16 +261,22 @@ async def fetch_tasks_feed(
     page_size: int = 25
 ):
     query = select(Task)
-    params = CursorParams(cursor=cursor_token, size=page_size)
+    # Configure keyset cursor with custom sort column and direction
+    params = CursorParams(
+        cursor=cursor_token, 
+        size=page_size, 
+        cursor_field="created_at", 
+        order="desc"
+    )
     
-    # Defaults to primary key if cursor_field is omitted
-    paginator = CursorPagination(order="desc")
+    paginator = CursorPagination()
     result = await paginator.paginate(db, query, params, model=Task)
     
     return {
         "items": result.data,
         "next_cursor": result.meta["next_cursor"],
-        "has_more": result.meta["has_more"]
+        "has_more": result.meta["has_more"],
+        "size": result.meta["size"]
     }
 ```
 
@@ -267,10 +294,10 @@ class TaskRouter(BaseRouter):
     model = Task
     service = TaskService
     
-    # 1. Keyset Cursor Pagination (GET /tasks accepts cursor & size)
+    # 1. Keyset Cursor Pagination (collection and /search accept cursor, size, etc.)
     pagination_class = CursorPagination
     
-    # 2. Or Page-Number Pagination (GET /tasks accepts page, size, sort_by, etc.)
+    # 2. Or Page-Number Pagination (accepts page, size, sort_by, etc.)
     # pagination_class = PageNumberPagination
 ```
 

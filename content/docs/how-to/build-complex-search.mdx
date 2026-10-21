@@ -74,6 +74,10 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
       "size": 20
     }
     ```
+
+    <Callout type="warn" emoji="⚠️">
+      **Mutual Exclusivity Rule:** `SearchRequest` strictly enforces a Fail-Fast boundary: you **cannot** combine a non-empty `cursor` with an offset `page > 1`. Attempting to pass both pagination strategies simultaneously will trigger an immediate `422 RequestValidationError` (`Cannot combine 'cursor' with 'page' > 1`). When using keyset cursor pagination, either omit `page` or keep it set to `1`.
+    </Callout>
   </Step>
 
   <Step>
@@ -83,7 +87,10 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
 
     1. **Search Depth Limit:** Resolved first from the model attribute `__max_search_depth__`, falling back to `settings.SEARCH_MAX_DEPTH` (default: **3**).
     2. **Pagination Bounds:** The `size` parameter in `SearchRequest` is automatically bounded between `1` and `settings.PAGINATION_MAX_SIZE` (default: **100**), with a fallback to `settings.PAGINATION_DEFAULT_SIZE` (default: **20**).
-    3. **Keyset Cursor Support:** When `cursor` is provided, `SearchEngine` executes keyset comparisons against the model primary key, bypassing table offset scans.
+    3. **Dynamic Keyset Cursor Synchronization:** When a `cursor` is provided, `SearchEngine` coordinates directly with `CursorPagination`. It propagates the primary sort criterion from `SearchRequest.sort` into the keyset engine, applying compound boundary evaluation:
+       * **Descending (`DESC`):** `(col < val) OR (col == val AND pk < last_pk)`
+       * **Ascending (`ASC`):** `(col > val) OR (col == val AND pk > last_pk)`
+       This completely eliminates table offset scan penalties while guaranteeing drift-free pagination across custom non-PK columns (including full date/timestamp coercion without PostgreSQL driver mismatches).
 
     To allow deeper relation eager-loading or deeply nested filter structures on a specific model:
 
@@ -105,5 +112,6 @@ ZCore's `SearchEngine` translates nested JSON payloads into secure, optimized SQ
   * **SQL Injection & Wildcard Protection:** Wildcard characters like `%` and `_` inside `ilike`, `contains`, `startswith`, `endswith`, and their `not_*` counterparts are automatically escaped.
   * **Non-String Column Casting:** Text operators applied to non-string columns (such as numbers or UUIDs) are automatically cast to `String` under the hood.
   * **DoS Defense (Max Depth & Size Clamping):** Filter nesting and relation joins (`include`) are strictly bounded by `__max_search_depth__` / `SEARCH_MAX_DEPTH`. Requested page sizes are automatically clamped to `PAGINATION_MAX_SIZE`.
-  * **Automatic Type Coercion:** Strings representing numbers (`int`, `float`), ISO timestamps, dates, booleans, and UUIDs (including elements inside `between` ranges and `in` collections) are safely converted to their matching Python column types.
+  * **Pagination Strategy Integrity:** Client payloads combining both `cursor` and `page > 1` are rejected at the schema level to prevent frontend state desynchronization.
+  * **Driver-Safe Type Coercion:** Strings representing numbers (`int`, `float`), ISO timestamps, `date` instances (including PostgreSQL-compliant `sqlalchemy.sql.sqltypes.Date` boundaries), booleans, and UUIDs are safely converted to their matching Python column types.
 </Callout>
