@@ -2,6 +2,7 @@
   "pages": [
     "repository-pattern-fastapi",
     "service-layer-fastapi",
-    "crud-router-fastapi"
+    "crud-router-fastapi",
+    "the-schema-explosion-trap-in-fastAPI"
   ]
 }
